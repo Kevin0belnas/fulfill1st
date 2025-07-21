@@ -288,20 +288,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/check-session', async (req, res) => {  // Added /api prefix
-  if (req.session.userId) {
-    return res.json({
-      loggedIn: true,
-      user: {
-        id: req.session.userId,
-        email: req.session.email,
-        role: req.session.role
-      }
-    });
-  }
-  res.json({ loggedIn: false });
-});
-
 router.get('/current-agents', async (req, res) => {
 
   try {
@@ -327,6 +313,20 @@ router.get('/current-agents', async (req, res) => {
     console.error('Error fetching user data:', error);
     res.status(500).json({ error: 'Failed to fetch user data' });
   }
+});
+
+router.get('/check-session', async (req, res) => {  // Added /api prefix
+  if (req.session.userId) {
+    return res.json({
+      loggedIn: true,
+      user: {
+        id: req.session.userId,
+        email: req.session.email,
+        role: req.session.role
+      }
+    });
+  }
+  res.json({ loggedIn: false });
 });
 
 router.get('/agent/chats', async (req, res) => {
