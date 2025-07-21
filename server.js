@@ -10,11 +10,12 @@ const fulfillmentRoutes = require('./routes/fulfillment');
 const ratingsreviewRoutes = require('./routes/ratingsreview');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 56731
+;
 
 // Middleware
 app.use(cors({
-  origin: 'http://fulfill1st.com', // Replace with your frontend URL
+  origin: 'https://fulfill1st.com', // Replace with your frontend URL
   credentials: true,
 }));
 app.use(express.json());
