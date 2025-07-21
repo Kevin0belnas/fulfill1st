@@ -151,10 +151,12 @@ app.use(session({
   cookie: {
     path: '/',
     httpOnly: true,
-    secure: isProduction, // HTTPS in production
-    sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    domain: isProduction ? '.fulfill1st.com' : undefined
+    secure: process.env.NODE_ENV === 'production', // Critical!
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 86400000,
+    domain: process.env.NODE_ENV === 'production' 
+      ? 'fulfill1st.com' // Remove leading dot
+      : undefined // For local development
   }
 }));
 
@@ -235,12 +237,15 @@ app.listen(PORT, () => {
   `);
 });
 
-// Handle shutdown gracefully
+const server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// Handle shutdowns gracefully
 process.on('SIGTERM', () => {
-  console.log('🛑 Server shutting down...');
-  pool.end();
+  console.log('SIGTERM received. Closing server...');
   server.close(() => {
-    console.log('🔴 Server terminated');
-    process.exit(0);
+    pool.end(); // Close database pool
+    console.log('Server terminated');
   });
 });
