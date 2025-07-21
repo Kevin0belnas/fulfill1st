@@ -15,7 +15,9 @@ const PORT = process.env.PORT || 56731
 
 // Middleware
 app.use(cors({
-  origin: 'https://fulfill1st.com', // Replace with your frontend URL
+  origin: 'http://fulfill1st.com', // Replace with your frontend URL
+
+  // origin: 'http://localhost:5173',
   credentials: true,
 }));
 app.use(express.json());
@@ -49,7 +51,7 @@ app.use(
     cookie: {
       path: "/",
       httpOnly: true,
-      secure: true,
+      secure: false, // Set to true if using HTTPS
       sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 24
     },
