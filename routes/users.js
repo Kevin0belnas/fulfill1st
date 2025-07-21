@@ -315,18 +315,15 @@ router.get('/current-agents', async (req, res) => {
   }
 });
 
-router.get('/check-session', async (req, res) => {  // Added /api prefix
-  if (req.session.userId) {
-    return res.json({
-      loggedIn: true,
-      user: {
-        id: req.session.userId,
-        email: req.session.email,
-        role: req.session.role
-      }
-    });
+router.get('/session-check', (req, res) => {
+  if (!req.session.userId) {
+    console.log('Session check failed - no userId found');
+    return res.status(401).json({ error: 'No session' });
   }
-  res.json({ loggedIn: false });
+  res.json({ 
+    userId: req.session.userId,
+    sessionId: req.sessionID 
+  });
 });
 
 router.get('/agent/chats', async (req, res) => {
