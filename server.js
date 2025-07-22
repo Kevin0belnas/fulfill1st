@@ -134,19 +134,19 @@ sessionStore.onReady().then(() => {
 // =============================================
 
 app.use(session({
+  key: "session_cookie_name",
   name: 'fulfill1st.sid',
   secret: process.env.SESSION_SECRET || 'Core@2002',
   store: sessionStore,
   resave: false,
   saveUninitialized: false,
-  rolling: true, // Reset maxAge on activity
   cookie: {
     path: '/',
     httpOnly: true,
     secure: true,              
-  sameSite: 'None',          
-  domain: '.fulfill1st.com',
-    maxAge: 86400000,
+    sameSite: 'none',          
+    domain: '.fulfill1st.com',
+    maxAge: 24 * 60 * 60 * 1000 // 1 day
   }
 }));
 
@@ -157,7 +157,7 @@ app.use(session({
 app.use((req, res, next) => {
   console.log('Session Info:', {
     sessionId: req.sessionID,
-    userId: req.session.userId || 'unauthenticated',
+    userId: req.session.userId,
     ip: req.ip,
     method: req.method,
     path: req.path
