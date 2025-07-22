@@ -126,20 +126,23 @@ sessionStore.onReady().then(() => {
 });
 
 // ✅ Session Middleware (COOKIE FIXES HERE)
-app.use(session({
-  key: 'fulfill1st.sid', // cookie name
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
-  store: sessionStore,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    secure: true, // must be true for HTTPS
-    sameSite: 'none', // allow cross-origin
-    domain: '.fulfill1st.com', // shared between www and root
-    maxAge: 24 * 60 * 60 * 1000 // 1 day
-  }
-}));
+app.use(
+  session({
+    key: "fulfill1st.sid",
+    secret: process.env.SESSION_SECRET || "your-secret-key",
+    store: sessionStore,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: true, // Must be true for HTTPS
+      sameSite: "none", // Required for cross-site cookies
+      maxAge: 24 * 60 * 60 * 1000 // 1 day
+      // ❌ DO NOT set domain unless backend has custom domain
+    },
+  })
+);
+
 
 // ✅ Debug session on every request
 app.use((req, res, next) => {
