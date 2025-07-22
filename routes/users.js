@@ -316,14 +316,15 @@ router.get('/current-agents', async (req, res) => {
 });
 
 router.get('/session-check', (req, res) => {
-  console.log("Session Info:", req.session);
-  if (req.session.userId) {
-    return res.json({ loggedIn: true, user: req.session });
-  } else {
-    return res.json({ loggedIn: false });
+  if (!req.session.userId) {
+    console.log('Session check failed - no userId found');
+    return res.status(401).json({ error: 'No session' });
   }
+  res.json({ 
+    userId: req.session.userId,
+    sessionId: req.sessionID 
+  });
 });
-
 
 router.get('/agent/chats', async (req, res) => {
   try {
