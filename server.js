@@ -135,7 +135,7 @@ sessionStore.onReady().then(() => {
 
 app.use(session({
   name: 'fulfill1st.sid',
-  secret: process.env.SESSION_SECRET || 'your-strong-secret-here',
+  secret: process.env.SESSION_SECRET || 'Core@2002',
   store: sessionStore,
   resave: false,
   saveUninitialized: false,
