@@ -83,18 +83,10 @@ const ratingsreviewRoutes = require('./routes/ratingsreview');
 const app = express();
 const PORT = process.env.PORT || 56731;
 
-// =============================================
-// Enhanced Configuration
-// =============================================
 
-// Determine environment
-const isProduction = process.env.NODE_ENV === 'production';
-
-// CORS Configuration
+// COS Configuration
 const corsOptions = {
-  origin: isProduction 
-    ? ['https://fulfill1st.com', 'https://www.fulfill1st.com']
-    : 'http://localhost:5173',
+  origin: 'https://fulfill1st.com', 
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -151,12 +143,10 @@ app.use(session({
   cookie: {
     path: '/',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Critical!
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: true,              
+  sameSite: 'None',          
+  domain: '.fulfill1st.com',
     maxAge: 86400000,
-    domain: process.env.NODE_ENV === 'production' 
-      ? 'fulfill1st.com' // Remove leading dot
-      : undefined // For local development
   }
 }));
 
@@ -230,7 +220,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`
-  🚀 Server running in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode
   🔗 Base URL: http://localhost:${PORT}
   📅 Started at: ${new Date().toLocaleString()}
   🔒 Session store: ${sessionStore.ready ? '✅ Connected' : '❌ Disconnected'}
