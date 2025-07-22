@@ -86,12 +86,13 @@ const PORT = process.env.PORT || 56731;
 
 // COS Configuration
 const corsOptions = {
-  origin: 'https://fulfill1st.com', 
+  origin: ['https://fulfill1st.com', 'https://www.fulfill1st.com'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['set-cookie']
 };
+
 
 app.use(cors(corsOptions));
 app.use(express.json());
