@@ -174,7 +174,7 @@ app.use('/api/fulfillment', fulfillmentRoutes);
 app.use('/api/ratingsreview', ratingsreviewRoutes);
 
 // Session Verification Endpoint
-app.get('/api/session-check', (req, res) => {
+app.get('/api/users/session-check', (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ 
       error: 'No active session',
