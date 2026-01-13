@@ -110,32 +110,98 @@ const Bookstore = () => {
   }
 
   if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 pt-24 pb-12">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center bg-white rounded-2xl shadow-xl p-8 border border-gray-200"
-          >
-            <div className="text-6xl mb-6">📚❌</div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-4">Connection Error</h3>
-            <p className="text-gray-600 mb-6">{error}</p>
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm font-mono text-gray-500">Backend URL:</p>
-              <code className="text-sm text-blue-600">{API_BASE_URL}</code>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 pt-24 pb-12">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center bg-white rounded-2xl shadow-xl p-8 md:p-12 border border-gray-200"
+        >
+          {/* Emoji and Title */}
+          <div className="text-7xl md:text-8xl mb-8 animate-pulse">📚✨</div>
+          
+          <h3 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">
+            Bookstores Are Coming Soon!
+          </h3>
+          
+          {/* Main Message */}
+          <div className="mb-8">
+            <p className="text-lg text-gray-600 mb-4">
+              Our bookstore directory is currently being prepared with amazing literary destinations.
+            </p>
+            <p className="text-gray-500">
+              We're curating the best bookstores to bring you an exceptional browsing experience.
+            </p>
+          </div>
+          
+          {/* Countdown/Schedule Box */}
+          <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+            <div className="flex items-center justify-center gap-4 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm font-medium text-gray-700">Coming Soon</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                <span className="text-sm font-medium text-gray-700">In Development</span>
+              </div>
             </div>
+            <p className="text-sm text-gray-500">
+              Stay tuned for the launch of our exclusive bookstore network!
+            </p>
+          </div>
+          
+          {/* Features Preview */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl mb-2">🔍</div>
+              <h4 className="font-medium text-gray-900 mb-1">Curated Selection</h4>
+              <p className="text-sm text-gray-500">Handpicked bookstores worldwide</p>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl mb-2">⭐</div>
+              <h4 className="font-medium text-gray-900 mb-1">Verified Reviews</h4>
+              <p className="text-sm text-gray-500">Authentic reader experiences</p>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl mb-2">📍</div>
+              <h4 className="font-medium text-gray-900 mb-1">Interactive Maps</h4>
+              <p className="text-sm text-gray-500">Easy location discovery</p>
+            </div>
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button 
               onClick={fetchBookstores}
-              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-full hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
+              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-full hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
             >
-              Retry Connection
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Check Status
             </button>
-          </motion.div>
-        </div>
+            
+            <button className="px-6 py-3 bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 font-medium rounded-full hover:from-gray-200 hover:to-gray-300 transition-all duration-300 shadow border border-gray-300">
+              Notify Me on Launch
+            </button>
+          </div>
+          
+          {/* Optional: Contact Info */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <p className="text-sm text-gray-500">
+              Questions? Contact us at{' '}
+              <a href="mailto:support@example.com" className="text-blue-600 hover:text-blue-700 underline">
+                support@example.com
+              </a>
+            </p>
+          </div>
+        </motion.div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 pt-24 pb-12">
