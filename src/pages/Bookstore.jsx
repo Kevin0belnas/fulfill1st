@@ -58,27 +58,19 @@ const Bookstore = () => {
   // Get unique categories from actual database
   const categories = [...new Set(bookstores.map(b => b.category).filter(Boolean))];
 
-  // Function to get image URL
-  const getImageUrl = (imageUrl) => {
-    if (!imageUrl) return null;
-    
-    // If imageUrl is already a full URL (starts with http), return it as is
-    if (imageUrl.startsWith('http')) {
-      return imageUrl;
-    }
-    
-    // If imageUrl is a relative path, construct the full URL
-    // Remove /api from the base URL if it exists
-    const baseUrl = API_BASE_URL.replace('/api', '');
-    
-    // Check if the imageUrl already has the base path
-    if (imageUrl.startsWith('/uploads/')) {
-      return `${baseUrl}${imageUrl}`;
-    }
-    
-    // If it doesn't start with /uploads/, add it
-    return `${baseUrl}/uploads/bookstores${imageUrl}`;
-  };
+  // Function to get image URL - FIXED
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  
+  // If already a full URL, return as is
+  if (imageUrl.startsWith('http')) {
+    return imageUrl;
+  }
+  
+  // The backend returns paths like: /uploads/bookstores/filename.jpg
+  // Construct full URL to your API domain
+  return `https://api.fulfill1st.com${imageUrl}`;
+};
 
   // Category color mapping
   const categoryColors = {

@@ -173,7 +173,7 @@ const BookstoreDetail = () => {
               {bookstore.image_url ? (
                 <div className="relative w-full h-full flex items-center justify-center p-8">
                   <img 
-                    src={`${API_BASE_URL.replace('/api', '')}${bookstore.image_url}`}
+                    src={bookstore.image_url?.startsWith('http') ? bookstore.image_url : `https://api.fulfill1st.com${bookstore.image_url}`}
                     alt={bookstore.name}
                     className="max-w-full max-h-full object-contain border border-gray-200 rounded-lg shadow-sm"
                     style={{ maxHeight: '100%', maxWidth: '100%' }}
@@ -414,10 +414,10 @@ const BookstoreDetail = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {authorBooks.map((book) => {
                       const bookImageUrl = book.image_url 
-                        ? book.image_url.startsWith('http') 
-                          ? book.image_url 
-                          : `${API_BASE_URL.replace('/api', '')}${book.image_url}`
-                        : null;
+                            ? book.image_url.startsWith('http') 
+                              ? book.image_url 
+                              : `https://api.fulfill1st.com${book.image_url}`
+                            : null;
                       
                       return (
                         <div key={book.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
