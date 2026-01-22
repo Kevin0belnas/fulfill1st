@@ -81,14 +81,14 @@ const FulfillmentNav = () => {
             </NavLink>
             
             <NavLink 
-              to="/list-of-tradepad" 
+              to="/tradpub" 
               className={({ isActive }) => 
                 isActive 
                   ? 'text-blue-400 border-b-2 border-blue-400 px-3 py-2 text-sm font-medium'
                   : 'text-gray-300 hover:text-white px-3 py-2 text-sm font-medium transition duration-200'
               }
             >
-              List of Tradepad
+              Trad Pub
             </NavLink>
           </div>
 

@@ -187,14 +187,14 @@ const ManagementNavbar = () => {
             </NavLink>
             
             <NavLink 
-              to="/reports" 
+              to="/manage-tradpub" 
               className={({ isActive }) => 
                 isActive 
                   ? 'text-blue-300 border-b-2 border-blue-300 px-3 py-2 text-sm font-medium'
                   : 'text-gray-300 hover:text-white px-3 py-2 text-sm font-medium transition duration-200'
               }
             >
-              Reports
+              Manage TradPub
             </NavLink>
           </div>
 

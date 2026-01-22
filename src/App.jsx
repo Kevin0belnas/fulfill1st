@@ -24,7 +24,6 @@ import Bookstore from './pages/Bookstore';
 import BookstoreDetail from './pages/BookstoreDetail';
 import BookEvents from './pages/BookEvents';
 import Cinematic from './pages/Cinematic';
-import ListOfTradepad from './pages/ListOfTradepad';
 
 import CompanyManagementLayout from './layouts/CompanyManagementLayout';
 import CompanyDashboard from './pages/CompanyDashboard';
@@ -38,6 +37,9 @@ import ManageBooks from './pages/ManageBooks';
 import ManageBookEvents from './pages/ManageBookEvents';
 import ManageSocialMediaLinks from './pages/ManageSocialMediaLinks';
 import AuthorMedia from './pages/AuthorMedia';
+import AuthorsBooksManagement from './pages/AuthorsBooksManagement';
+import ManageTradPub from './pages/ManageTradPub';
+import TradePub from './pages/TradePub';
 
 // Global style to hide scrollbar but keep scrolling
 const GlobalStyle = createGlobalStyle`
@@ -108,7 +110,7 @@ export default function App() {
             <Route path="/bookstore/:id/:slug?" element={<BookstoreDetail />} />
             <Route path="/book-events" element={<BookEvents />} />
             <Route path="/cinematic" element={<Cinematic />} />
-            <Route path="/list-of-tradepad" element={<ListOfTradepad />} />
+            <Route path="/tradpub" element={<TradePub />} />
             <Route path="/author-media" element={<AuthorMedia />} />
 
           </Route>
@@ -124,6 +126,8 @@ export default function App() {
             <Route path="/manage-books" element={<ManageBooks />} />
             <Route path="/manage-book-events" element={<ManageBookEvents />} />
             <Route path="/manage-social-media-links" element={<ManageSocialMediaLinks />} />
+            <Route path="/author-books" element={<AuthorsBooksManagement />} />
+            <Route path="/manage-tradpub" element={<ManageTradPub />} />
           </Route>
           
           {/* Routes WITHOUT Navbar */}

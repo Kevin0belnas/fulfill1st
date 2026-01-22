@@ -1,11 +1,12 @@
 // pages/ManageBooks.jsx
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 const ManageBooks = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [books, setBooks] = useState([]);
   const [bookstores, setBookstores] = useState([]);
   const [authors, setAuthors] = useState([]);
@@ -14,6 +15,7 @@ const ManageBooks = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [formData, setFormData] = useState({
     bookstore_id: '',
     author_id: '',
@@ -27,6 +29,25 @@ const ManageBooks = () => {
   });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+
+  // Scroll to top on route change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [location.pathname]);
+
+  // Show scroll-to-top button when scrolling down
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.pageYOffset > 300);
+    };
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     fetchBooks();
@@ -424,689 +445,850 @@ const ManageBooks = () => {
 
   if (loading && books.length === 0) {
     return (
-      <div className="max-w-screen mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center py-12">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading books...</p>
+      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50">
+        <div className="max-w-screen mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-600"></div>
+            <p className="mt-4 text-emerald-700">Loading books...</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-screen mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Manage Books</h1>
-          <p className="text-gray-600">
-            View and manage all books across authors and bookstores
-          </p>
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50">
+      <div className="max-w-screen mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-emerald-900 mb-2">Manage Books</h1>
+            <p className="text-emerald-700">
+              View and manage all books across authors and bookstores
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-medium py-3 px-6 rounded-xl transition duration-200 flex items-center shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add New Book
+          </button>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition duration-200 flex items-center"
-        >
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Add New Book
-        </button>
-      </div>
 
-      {/* Books Table */}
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Book
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Author
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Bookstore
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Published
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Price
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {books.length === 0 ? (
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-emerald-100">
+            <div className="flex items-center">
+              <div className="p-3 rounded-lg bg-emerald-100 mr-4">
+                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-emerald-600">Total Books</p>
+                <p className="text-2xl font-bold text-emerald-900">{books.length}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-emerald-100">
+            <div className="flex items-center">
+              <div className="p-3 rounded-lg bg-green-100 mr-4">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-green-600">Bookstores</p>
+                <p className="text-2xl font-bold text-green-900">{bookstores.length}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-emerald-100">
+            <div className="flex items-center">
+              <div className="p-3 rounded-lg bg-emerald-100 mr-4">
+                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-emerald-600">Active Authors</p>
+                <p className="text-2xl font-bold text-emerald-900">{authors.length}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Books Table */}
+        <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-emerald-100">
+          <div className="px-6 py-4 bg-gradient-to-r from-emerald-50 to-green-50 border-b border-emerald-100">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-emerald-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <h2 className="text-lg font-semibold text-emerald-900">Books Catalog</h2>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-emerald-100">
+              <thead className="bg-emerald-50">
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                    No books found. Add your first book!
-                  </td>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+                    Book Details
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+                    Author
+                  </th>
+                  <th className="px 6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+                    Bookstore
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+                    Published
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+                    Price
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ) : (
-                books.map((book) => (
-                  <tr key={book.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0">
-                          {book.image_url ? (
-                            <img 
-                              src={getFullImageUrl(book.image_url)} 
-                              alt={book.title}
-                              className="h-16 w-12 object-cover rounded-md shadow-sm"
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = `${API_BASE_URL.replace('/api', '')}/uploads/books/default-book.jpg`;
-                              }}
-                            />
-                          ) : (
-                            <div className="h-16 w-12 bg-gradient-to-br from-blue-100 to-indigo-200 rounded-md flex items-center justify-center shadow-sm">
-                              <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {book.title}
-                          </div>
-                          <div className="text-sm text-gray-500 mt-1">
-                            <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                              {book.genre || 'No genre'}
-                            </span>
-                          </div>
-                          {book.description && (
-                            <div className="text-sm text-gray-500 truncate max-w-xs mt-1">
-                              {book.description.substring(0, 60)}...
-                            </div>
-                          )}
-                        </div>
+              </thead>
+              <tbody className="bg-white divide-y divide-emerald-100">
+                {books.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center">
+                      <div className="text-emerald-600 mb-4">
+                        <svg className="w-16 h-16 mx-auto text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{book.author_name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{book.bookstore_name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        {formatDisplayDate(book.published_date)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {formatPrice(book.price)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleEdit(book)}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(book.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      <p className="text-emerald-600 font-medium mb-2">No books found</p>
+                      <p className="text-emerald-500 text-sm mb-4">Add your first book to get started</p>
+                      <button
+                        onClick={() => setShowAddModal(true)}
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg hover:from-emerald-600 hover:to-green-700 transition duration-200 text-sm"
+                      >
+                        Add Your First Book
+                      </button>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Add Book Modal */}
-      {showAddModal && (
-        <div className="fixed mt-10 inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white mt-10 rounded-xl shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Add New Book</h2>
-                <button
-                  onClick={() => {
-                    setShowAddModal(false);
-                    resetForm();
-                  }}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Select Bookstore *
-                    </label>
-                    <select
-                      name="bookstore_id"
-                      value={formData.bookstore_id}
-                      onChange={handleChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- Select a Bookstore --</option>
-                      {bookstores.map(bookstore => (
-                        <option key={bookstore.id} value={bookstore.id}>
-                          {bookstore.name} - {bookstore.location}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Select Author *
-                    </label>
-                    <select
-                      name="author_id"
-                      value={formData.author_id}
-                      onChange={handleChange}
-                      required
-                      disabled={!formData.bookstore_id || authors.length === 0}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                    >
-                      <option value="">-- Select an Author --</option>
-                      {authors.length === 0 && formData.bookstore_id ? (
-                        <option value="" disabled>
-                          No authors found for this bookstore. Add authors first.
-                        </option>
-                      ) : null}
-                      {authors.map(author => (
-                        <option key={author.id} value={author.id}>
-                          {author.name}
-                        </option>
-                      ))}
-                    </select>
-                    {formData.bookstore_id && authors.length === 0 && (
-                      <p className="text-xs text-red-500 mt-1">
-                        No authors available. Please add authors to this bookstore first.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Book Image Upload */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Book Cover Image
-                  </label>
-                  <div className="flex items-center space-x-6">
-                    <div className="flex-shrink-0">
-                      {imagePreview ? (
-                        <div className="relative">
-                          <img 
-                            src={imagePreview} 
-                            alt="Book cover preview" 
-                            className="h-32 w-24 object-cover rounded-lg shadow-md border border-gray-300"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleRemoveImage}
-                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition duration-200"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  books.map((book) => (
+                    <tr key={book.id} className="hover:bg-emerald-50 transition duration-150">
+                      <td className="px-6 py-5">
+                        <div className="flex items-start space-x-4">
+                          <div className="flex-shrink-0">
+                            {book.image_url ? (
+                              <img 
+                                src={getFullImageUrl(book.image_url)} 
+                                alt={book.title}
+                                className="h-20 w-14 object-cover rounded-lg shadow-md border border-emerald-200"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = `${API_BASE_URL.replace('/api', '')}/uploads/books/default-book.jpg`;
+                                }}
+                              />
+                            ) : (
+                              <div className="h-20 w-14 bg-gradient-to-br from-emerald-100 to-green-200 rounded-lg flex items-center justify-center shadow-sm border border-emerald-200">
+                                <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-emerald-900 truncate">
+                              {book.title}
+                            </div>
+                            <div className="mt-2">
+                              <span className={`px-3 py-1 text-xs font-medium rounded-full bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800 border border-emerald-200`}>
+                                {book.genre || 'No genre'}
+                              </span>
+                            </div>
+                            {book.description && (
+                              <div className="text-sm text-emerald-600 truncate max-w-xs mt-2">
+                                {book.description.substring(0, 80)}...
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                            <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-emerald-900">{book.author_name}</div>
+                            <div className="text-xs text-emerald-500">Author</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-green-900">{book.bookstore_name}</div>
+                            <div className="text-xs text-green-500">Bookstore</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 w-8 h-8 bg-emerald-50 rounded-full flex items-center justify-center mr-3">
+                            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <div className="text-sm text-emerald-700">
+                              {formatDisplayDate(book.published_date)}
+                            </div>
+                            <div className="text-xs text-emerald-500">Published</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="px-3 py-2 bg-emerald-50 rounded-lg inline-block">
+                          <div className="text-sm font-bold text-emerald-900">
+                            {formatPrice(book.price)}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={() => handleEdit(book)}
+                            className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition duration-200 flex items-center text-sm font-medium"
+                          >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(book.id)}
+                            className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition duration-200 flex items-center text-sm font-medium"
+                          >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete
                           </button>
                         </div>
-                      ) : (
-                        <div className="h-32 w-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
-                          <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg">
-                        <div className="space-y-1 text-center">
-                          <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          <div className="flex text-sm text-gray-600">
-                            <label htmlFor="book-image-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none">
-                              <span>Upload an image</span>
-                              <input 
-                                id="book-image-upload" 
-                                name="book-image" 
-                                type="file" 
-                                accept="image/*"
-                                className="sr-only"
-                                onChange={handleImageChange}
-                              />
-                            </label>
-                            <p className="pl-1">or drag and drop</p>
-                          </div>
-                          <p className="text-xs text-gray-500">
-                            PNG, JPG, GIF up to 5MB
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Book Title *
-                      </label>
-                      <input
-                        type="text"
-                        name="title"
-                        value={formData.title}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter book title"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Price ($)
-                      </label>
-                      <input
-                        type="number"
-                        name="price"
-                        value={formData.price}
-                        onChange={handleChange}
-                        step="0.01"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g., 19.99"
-                        min="0"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Genre
-                      </label>
-                      <input
-                        type="text"
-                        name="genre"
-                        value={formData.genre}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g., Fiction, Mystery, Science"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Published Date
-                      </label>
-                      <input
-                        type="date"
-                        name="published_date"
-                        value={formData.published_date}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ISBN
-                    </label>
-                    <input
-                      type="text"
-                      name="isbn"
-                      value={formData.isbn}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., 978-3-16-148410-0"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    rows="4"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Describe the book..."
-                  />
-                </div>
-
-                {/* Selected Bookstore & Author Info */}
-                {(selectedBookstore || selectedAuthor) && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h3 className="font-medium text-blue-800 mb-2">Selection Details:</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {selectedBookstore && (
-                        <div className="flex items-center space-x-3">
-                          <div className="text-2xl">{selectedBookstore.logo || '📚'}</div>
-                          <div>
-                            <p className="font-medium text-gray-900">Bookstore</p>
-                            <p className="text-sm text-gray-600">{selectedBookstore.name}</p>
-                            <p className="text-xs text-gray-500">{selectedBookstore.location}</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedAuthor && (
-                        <div className="flex items-center space-x-3">
-                          <div className="text-2xl">{selectedAuthor.avatar || '👤'}</div>
-                          <div>
-                            <p className="font-medium text-gray-900">Author</p>
-                            <p className="text-sm text-gray-600">{selectedAuthor.name}</p>
-                            <p className="text-xs text-gray-500">
-                              {selectedAuthor.genre || 'No genre specified'}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
+              </tbody>
+            </table>
+          </div>
+          {books.length > 0 && (
+            <div className="px-6 py-4 bg-emerald-50 border-t border-emerald-100 text-sm text-emerald-600">
+              Showing {books.length} book{books.length !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
 
-                <div className="flex justify-end gap-4 pt-6 border-t border-gray-200">
+        {/* Add Book Modal */}
+        {showAddModal && (
+          <div className="fixed inset-0 bg-emerald-900 bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 z-10 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-6 rounded-t-2xl">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold mb-1">Add New Book</h2>
+                    <p className="text-emerald-100">Fill in the book details below</p>
+                  </div>
                   <button
-                    type="button"
                     onClick={() => {
                       setShowAddModal(false);
                       resetForm();
                     }}
-                    className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition duration-200"
+                    className="text-emerald-100 hover:text-white"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading || uploadingImage}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition duration-200"
-                  >
-                    {loading || uploadingImage ? 'Adding...' : 'Add Book'}
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Book Modal */}
-      {showEditModal && selectedBook && (
-        <div className="fixed mt-10 inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white mt-10 rounded-xl shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Edit Book</h2>
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    resetForm();
-                  }}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               </div>
 
-              <form onSubmit={handleUpdate} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Select Bookstore *
-                    </label>
-                    <select
-                      name="bookstore_id"
-                      value={formData.bookstore_id}
-                      onChange={handleChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- Select a Bookstore --</option>
-                      {bookstores.map(bookstore => (
-                        <option key={bookstore.id} value={bookstore.id}>
-                          {bookstore.name} - {bookstore.location}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              <div className="p-6">
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-emerald-700 mb-2">
+                        Select Bookstore *
+                      </label>
+                      <select
+                        name="bookstore_id"
+                        value={formData.bookstore_id}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white"
+                      >
+                        <option value="" className="text-emerald-400">-- Select a Bookstore --</option>
+                        {bookstores.map(bookstore => (
+                          <option key={bookstore.id} value={bookstore.id} className="text-emerald-900">
+                            {bookstore.name} - {bookstore.location}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Select Author *
-                    </label>
-                    <select
-                      name="author_id"
-                      value={formData.author_id}
-                      onChange={handleChange}
-                      required
-                      disabled={!formData.bookstore_id || authors.length === 0}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                    >
-                      <option value="">-- Select an Author --</option>
-                      {authors.length === 0 && formData.bookstore_id ? (
-                        <option value="" disabled>
-                          No authors found for this bookstore. Add authors first.
-                        </option>
-                      ) : null}
-                      {authors.map(author => (
-                        <option key={author.id} value={author.id}>
-                          {author.name}
-                        </option>
-                      ))}
-                    </select>
-                    {formData.bookstore_id && authors.length === 0 && (
-                      <p className="text-xs text-red-500 mt-1">
-                        No authors available. Please add authors to this bookstore first.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Book Image Upload */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Book Cover Image
-                  </label>
-                  <div className="flex items-center space-x-6">
-                    <div className="flex-shrink-0">
-                      {imagePreview ? (
-                        <div className="relative">
-                          <img 
-                            src={imagePreview} 
-                            alt="Book cover preview" 
-                            className="h-32 w-24 object-cover rounded-lg shadow-md border border-gray-300"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleRemoveImage}
-                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition duration-200"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="h-32 w-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
-                          <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        </div>
+                    <div>
+                      <label className="block text-sm font-medium text-emerald-700 mb-2">
+                        Select Author *
+                      </label>
+                      <select
+                        name="author_id"
+                        value={formData.author_id}
+                        onChange={handleChange}
+                        required
+                        disabled={!formData.bookstore_id || authors.length === 0}
+                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white disabled:bg-emerald-50 disabled:text-emerald-400"
+                      >
+                        <option value="" className="text-emerald-400">-- Select an Author --</option>
+                        {authors.length === 0 && formData.bookstore_id ? (
+                          <option value="" disabled className="text-emerald-400">
+                            No authors found for this bookstore. Add authors first.
+                          </option>
+                        ) : null}
+                        {authors.map(author => (
+                          <option key={author.id} value={author.id} className="text-emerald-900">
+                            {author.name}
+                          </option>
+                        ))}
+                      </select>
+                      {formData.bookstore_id && authors.length === 0 && (
+                        <p className="text-xs text-red-500 mt-2">
+                          ⚠️ No authors available. Please add authors to this bookstore first.
+                        </p>
                       )}
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg">
-                        <div className="space-y-1 text-center">
-                          <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          <div className="flex text-sm text-gray-600">
-                            <label htmlFor="edit-book-image-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none">
-                              <span>Upload an image</span>
-                              <input 
-                                id="edit-book-image-upload" 
-                                name="edit-book-image" 
-                                type="file" 
-                                accept="image/*"
-                                className="sr-only"
-                                onChange={handleImageChange}
-                              />
-                            </label>
-                            <p className="pl-1">or drag and drop</p>
+                  </div>
+
+                  {/* Book Image Upload */}
+                  <div>
+                    <label className="block text-sm font-medium text-emerald-700 mb-3">
+                      Book Cover Image
+                    </label>
+                    <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
+                      <div className="flex-shrink-0">
+                        {imagePreview ? (
+                          <div className="relative">
+                            <img 
+                              src={imagePreview} 
+                              alt="Book cover preview" 
+                              className="h-40 w-28 object-cover rounded-xl shadow-lg border-2 border-emerald-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleRemoveImage}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition duration-200 shadow-md"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
                           </div>
-                          <p className="text-xs text-gray-500">
-                            PNG, JPG, GIF up to 5MB
-                          </p>
-                          {selectedBook.image_url && (
-                            <p className="text-xs text-green-600 mt-2">
-                              Current image will be replaced
+                        ) : (
+                          <div className="h-40 w-28 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl flex items-center justify-center border-2 border-dashed border-emerald-300">
+                            <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="border-2 border-dashed border-emerald-300 rounded-xl p-8 bg-gradient-to-br from-emerald-50 to-transparent">
+                          <div className="space-y-3 text-center">
+                            <svg className="mx-auto h-12 w-12 text-emerald-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            <div className="flex justify-center text-sm text-emerald-600">
+                              <label htmlFor="book-image-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-emerald-600 hover:text-emerald-500 focus-within:outline-none border border-emerald-300 px-4 py-2 rounded-lg hover:bg-emerald-50 transition duration-200">
+                                <span>Choose an image</span>
+                                <input 
+                                  id="book-image-upload" 
+                                  name="book-image" 
+                                  type="file" 
+                                  accept="image/*"
+                                  className="sr-only"
+                                  onChange={handleImageChange}
+                                />
+                              </label>
+                              <p className="pl-3 self-center">or drag and drop</p>
+                            </div>
+                            <p className="text-xs text-emerald-500">
+                              PNG, JPG, GIF up to 5MB
                             </p>
-                          )}
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Book Title *
+                        </label>
+                        <input
+                          type="text"
+                          name="title"
+                          value={formData.title}
+                          onChange={handleChange}
+                          required
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                          placeholder="Enter book title"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          name="price"
+                          value={formData.price}
+                          onChange={handleChange}
+                          step="0.01"
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                          placeholder="e.g., 19.99"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Genre
+                        </label>
+                        <input
+                          type="text"
+                          name="genre"
+                          value={formData.genre}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                          placeholder="e.g., Fiction, Mystery, Science"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Published Date
+                        </label>
+                        <input
+                          type="date"
+                          name="published_date"
+                          value={formData.published_date}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Book Title *
+                      <label className="block text-sm font-medium text-emerald-700 mb-2">
+                        ISBN
                       </label>
                       <input
                         type="text"
-                        name="title"
-                        value={formData.title}
+                        name="isbn"
+                        value={formData.isbn}
                         onChange={handleChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter book title"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Price ($)
-                      </label>
-                      <input
-                        type="number"
-                        name="price"
-                        value={formData.price}
-                        onChange={handleChange}
-                        step="0.01"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g., 19.99"
-                        min="0"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Genre
-                      </label>
-                      <input
-                        type="text"
-                        name="genre"
-                        value={formData.genre}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g., Fiction, Mystery, Science"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Published Date
-                      </label>
-                      <input
-                        type="date"
-                        name="published_date"
-                        value={formData.published_date}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                        placeholder="e.g., 978-3-16-148410-0"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ISBN
+                    <label className="block text-sm font-medium text-emerald-700 mb-2">
+                      Description
                     </label>
-                    <input
-                      type="text"
-                      name="isbn"
-                      value={formData.isbn}
+                    <textarea
+                      name="description"
+                      value={formData.description}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., 978-3-16-148410-0"
+                      rows="4"
+                      className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      placeholder="Describe the book..."
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    rows="4"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Describe the book..."
-                  />
-                </div>
+                  {/* Selected Bookstore & Author Info */}
+                  {(selectedBookstore || selectedAuthor) && (
+                    <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-5">
+                      <h3 className="font-semibold text-emerald-800 mb-3 flex items-center">
+                        <svg className="w-5 h-5 mr-2 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Selection Details
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        {selectedBookstore && (
+                          <div className="bg-white p-4 rounded-lg border border-emerald-100">
+                            <div className="flex items-center space-x-4">
+                              <div className="text-2xl bg-emerald-100 p-3 rounded-lg">{selectedBookstore.logo || '📚'}</div>
+                              <div>
+                                <p className="font-semibold text-emerald-900">Bookstore</p>
+                                <p className="text-sm text-emerald-700">{selectedBookstore.name}</p>
+                                <p className="text-xs text-emerald-500">{selectedBookstore.location}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {selectedAuthor && (
+                          <div className="bg-white p-4 rounded-lg border border-emerald-100">
+                            <div className="flex items-center space-x-4">
+                              <div className="text-2xl bg-green-100 p-3 rounded-lg">{selectedAuthor.avatar || '👤'}</div>
+                              <div>
+                                <p className="font-semibold text-green-900">Author</p>
+                                <p className="text-sm text-green-700">{selectedAuthor.name}</p>
+                                <p className="text-xs text-green-500">
+                                  {selectedAuthor.genre || 'No genre specified'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
-                <div className="flex justify-end gap-4 pt-6 border-t border-gray-200">
+                  <div className="flex justify-end gap-4 pt-6 border-t border-emerald-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddModal(false);
+                        resetForm();
+                      }}
+                      className="px-6 py-3 border border-emerald-300 text-emerald-700 rounded-xl hover:bg-emerald-50 transition duration-200 font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading || uploadingImage}
+                      className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 transition duration-200 font-medium shadow-md hover:shadow-lg"
+                    >
+                      {loading || uploadingImage ? (
+                        <span className="flex items-center">
+                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Adding...
+                        </span>
+                      ) : 'Add Book'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Book Modal */}
+        {showEditModal && selectedBook && (
+          <div className="fixed inset-0 bg-emerald-900 bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 z-10 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-6 rounded-t-2xl">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold mb-1">Edit Book</h2>
+                    <p className="text-emerald-100">Update the book details</p>
+                  </div>
                   <button
-                    type="button"
                     onClick={() => {
                       setShowEditModal(false);
                       resetForm();
                     }}
-                    className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition duration-200"
+                    className="text-emerald-100 hover:text-white"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading || uploadingImage}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition duration-200"
-                  >
-                    {loading || uploadingImage ? 'Updating...' : 'Update Book'}
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 </div>
-              </form>
+              </div>
+
+              <div className="p-6">
+                <form onSubmit={handleUpdate} className="space-y-6">
+                  {/* Same form structure as Add Modal, with different submit handler */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-emerald-700 mb-2">
+                        Select Bookstore *
+                      </label>
+                      <select
+                        name="bookstore_id"
+                        value={formData.bookstore_id}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white"
+                      >
+                        <option value="" className="text-emerald-400">-- Select a Bookstore --</option>
+                        {bookstores.map(bookstore => (
+                          <option key={bookstore.id} value={bookstore.id} className="text-emerald-900">
+                            {bookstore.name} - {bookstore.location}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-emerald-700 mb-2">
+                        Select Author *
+                      </label>
+                      <select
+                        name="author_id"
+                        value={formData.author_id}
+                        onChange={handleChange}
+                        required
+                        disabled={!formData.bookstore_id || authors.length === 0}
+                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white disabled:bg-emerald-50 disabled:text-emerald-400"
+                      >
+                        <option value="" className="text-emerald-400">-- Select an Author --</option>
+                        {authors.length === 0 && formData.bookstore_id ? (
+                          <option value="" disabled className="text-emerald-400">
+                            No authors found for this bookstore. Add authors first.
+                          </option>
+                        ) : null}
+                        {authors.map(author => (
+                          <option key={author.id} value={author.id} className="text-emerald-900">
+                            {author.name}
+                          </option>
+                        ))}
+                      </select>
+                      {formData.bookstore_id && authors.length === 0 && (
+                        <p className="text-xs text-red-500 mt-2">
+                          ⚠️ No authors available. Please add authors to this bookstore first.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Book Image Upload */}
+                  <div>
+                    <label className="block text-sm font-medium text-emerald-700 mb-3">
+                      Book Cover Image
+                    </label>
+                    <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
+                      <div className="flex-shrink-0">
+                        {imagePreview ? (
+                          <div className="relative">
+                            <img 
+                              src={imagePreview} 
+                              alt="Book cover preview" 
+                              className="h-40 w-28 object-cover rounded-xl shadow-lg border-2 border-emerald-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleRemoveImage}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition duration-200 shadow-md"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="h-40 w-28 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl flex items-center justify-center border-2 border-dashed border-emerald-300">
+                            <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="border-2 border-dashed border-emerald-300 rounded-xl p-8 bg-gradient-to-br from-emerald-50 to-transparent">
+                          <div className="space-y-3 text-center">
+                            <svg className="mx-auto h-12 w-12 text-emerald-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            <div className="flex justify-center text-sm text-emerald-600">
+                              <label htmlFor="edit-book-image-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-emerald-600 hover:text-emerald-500 focus-within:outline-none border border-emerald-300 px-4 py-2 rounded-lg hover:bg-emerald-50 transition duration-200">
+                                <span>Choose an image</span>
+                                <input 
+                                  id="edit-book-image-upload" 
+                                  name="edit-book-image" 
+                                  type="file" 
+                                  accept="image/*"
+                                  className="sr-only"
+                                  onChange={handleImageChange}
+                                />
+                              </label>
+                              <p className="pl-3 self-center">or drag and drop</p>
+                            </div>
+                            <p className="text-xs text-emerald-500">
+                              PNG, JPG, GIF up to 5MB
+                            </p>
+                            {selectedBook.image_url && (
+                              <p className="text-xs text-emerald-600 mt-2 font-medium">
+                                Current image will be replaced
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Book Title *
+                        </label>
+                        <input
+                          type="text"
+                          name="title"
+                          value={formData.title}
+                          onChange={handleChange}
+                          required
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                          placeholder="Enter book title"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          name="price"
+                          value={formData.price}
+                          onChange={handleChange}
+                          step="0.01"
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                          placeholder="e.g., 19.99"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Genre
+                        </label>
+                        <input
+                          type="text"
+                          name="genre"
+                          value={formData.genre}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                          placeholder="e.g., Fiction, Mystery, Science"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-700 mb-2">
+                          Published Date
+                        </label>
+                        <input
+                          type="date"
+                          name="published_date"
+                          value={formData.published_date}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-emerald-700 mb-2">
+                        ISBN
+                      </label>
+                      <input
+                        type="text"
+                        name="isbn"
+                        value={formData.isbn}
+                        onChange={handleChange}
+                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                        placeholder="e.g., 978-3-16-148410-0"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-emerald-700 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      name="description"
+                      value={formData.description}
+                      onChange={handleChange}
+                      rows="4"
+                      className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      placeholder="Describe the book..."
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-4 pt-6 border-t border-emerald-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEditModal(false);
+                        resetForm();
+                      }}
+                      className="px-6 py-3 border border-emerald-300 text-emerald-700 rounded-xl hover:bg-emerald-50 transition duration-200 font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading || uploadingImage}
+                      className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 transition duration-200 font-medium shadow-md hover:shadow-lg"
+                    >
+                      {loading || uploadingImage ? (
+                        <span className="flex items-center">
+                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Updating...
+                        </span>
+                      ) : 'Update Book'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Scroll to Top Button */}
+        {showScrollTop && (
+          <button
+            onClick={scrollToTop}
+            className="fixed bottom-8 right-8 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 z-40"
+            aria-label="Scroll to top"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+            </svg>
+          </button>
+        )}
+      </div>
     </div>
   );
 };

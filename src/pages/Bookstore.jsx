@@ -1,8 +1,22 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// Environment-aware configuration
+const ENV_CONFIG = {
+  development: {
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
+    imageBaseUrl: import.meta.env.VITE_IMAGE_BASE_URL || 'http://localhost:3000'
+  },
+  production: {
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'https://api.fulfill1st.com/api',
+    imageBaseUrl: import.meta.env.VITE_IMAGE_BASE_URL || 'https://api.fulfill1st.com'
+  }
+};
+
+// Detect environment
+const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
+const config = ENV_CONFIG[isProduction ? 'production' : 'development'];
 
 const Bookstore = () => {
   const [bookstores, setBookstores] = useState([]);
@@ -11,6 +25,66 @@ const Bookstore = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [hoveredBookstore, setHoveredBookstore] = useState(null);
+  const [viewMode, setViewMode] = useState('grid');
+  const [sortBy, setSortBy] = useState('default');
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const location = useLocation();
+  const gridRef = useRef(null);
+
+  // Compact theme palette
+  const theme = {
+    bg: {
+      primary: 'bg-gradient-to-br from-emerald-25 via-green-50/50 to-emerald-50',
+      card: 'bg-white/95 backdrop-blur-sm',
+      glass: 'bg-white/10 backdrop-blur-sm'
+    },
+    text: {
+      primary: 'text-emerald-900',
+      secondary: 'text-emerald-800',
+      muted: 'text-emerald-600/90'
+    },
+    border: {
+      light: 'border-emerald-100/70',
+      medium: 'border-emerald-200'
+    },
+    gradient: {
+      primary: 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-green-500',
+    },
+    shadow: {
+      card: 'shadow-lg shadow-emerald-100/40',
+      hover: 'shadow-xl shadow-emerald-200/40'
+    }
+  };
+
+  // Compact category colors
+  const categoryColors = {
+    'Independent': 'from-emerald-500 to-green-600',
+    'Chain': 'from-green-500 to-emerald-600',
+    'Specialty': 'from-lime-400 to-green-500',
+    'Online': 'from-emerald-400 to-cyan-500',
+    'Academic': 'from-green-400 to-teal-500',
+    'Used': 'from-amber-400 to-yellow-500',
+    'Default': 'from-emerald-400 to-green-500'
+  };
+
+  // Scroll to top
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const timer = setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
+
+  // Back to top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.pageYOffset > 300);
+    };
+    
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     fetchBookstores();
@@ -20,32 +94,72 @@ const Bookstore = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_BASE_URL}/bookstores`, {
-        credentials: 'include'
+      
+      const endpoint = `${config.apiBaseUrl}/bookstores`;
+      
+      const response = await fetch(endpoint, {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
       });
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
       const data = await response.json();
-      
-      if (data.success) {
-        setBookstores(data.data || []);
-      } else {
-        setBookstores(data || []);
-      }
+      setBookstores(data.success ? (data.data || []) : (data || []));
     } catch (error) {
-      console.error('Error fetching bookstores:', error);
-      setError('Failed to load bookstores. Please check if the backend server is running.');
-      setBookstores([]);
+      console.error('Error:', error);
+      if (!isProduction) {
+        await tryFallbackEndpoints();
+      } else {
+        setError(`Failed to load. ${error.message}`);
+        setBookstores([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Filter bookstores based on search and category
-  const filteredBookstores = bookstores.filter(bookstore => {
+  const tryFallbackEndpoints = async () => {
+    const fallbackEndpoints = [
+      'http://localhost:3000/api/bookstores',
+      'http://192.168.68.4:3000/api/bookstores',
+      'http://127.0.0.1:3000/api/bookstores'
+    ];
+    
+    for (const endpoint of fallbackEndpoints) {
+      try {
+        const response = await fetch(endpoint, { credentials: 'include' });
+        if (response.ok) {
+          const data = await response.json();
+          setBookstores(data.success ? (data.data || []) : (data || []));
+          return;
+        }
+      } catch (err) {
+        console.error('Error:', err);
+        continue;
+      }
+    }
+    
+    setError('Backend server not found.');
+    setBookstores([]);
+  };
+
+  const categories = [...new Set(bookstores.map(b => b.category).filter(Boolean))];
+
+  const sortedBookstores = [...bookstores].sort((a, b) => {
+    switch (sortBy) {
+      case 'rating':
+        return (b.rating || 0) - (a.rating || 0);
+      case 'name':
+        return (a.name || '').localeCompare(b.name || '');
+      case 'established':
+        return (b.established || 0) - (a.established || 0);
+      default:
+        return 0;
+    }
+  });
+
+  const filteredBookstores = sortedBookstores.filter(bookstore => {
     const matchesSearch = bookstore.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          bookstore.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          bookstore.description?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -55,545 +169,564 @@ const Bookstore = () => {
     return matchesSearch && matchesCategory;
   });
 
-  // Get unique categories from actual database
-  const categories = [...new Set(bookstores.map(b => b.category).filter(Boolean))];
-
-  // Function to get image URL - FIXED
-const getImageUrl = (imageUrl) => {
-  if (!imageUrl) return null;
-  
-  // If already a full URL, return as is
-  if (imageUrl.startsWith('http')) {
-    return imageUrl;
-  }
-  
-  // The backend returns paths like: /uploads/bookstores/filename.jpg
-  // Construct full URL to your API domain
-  return `https://api.fulfill1st.com${imageUrl}`;
-};
-
-  // Category color mapping
-  const categoryColors = {
-    'Independent': 'from-blue-500 to-cyan-500',
-    'Chain': 'from-purple-500 to-pink-500',
-    'Specialty': 'from-green-500 to-emerald-500',
-    'Online': 'from-orange-500 to-red-500',
-    'Academic': 'from-indigo-500 to-purple-500',
-    'Used': 'from-yellow-500 to-amber-500',
-    'Default': 'from-gray-500 to-gray-700'
+  const getImageUrl = (imageUrl) => {
+    if (!imageUrl) return null;
+    if (imageUrl.startsWith('http')) return imageUrl;
+    if (imageUrl.startsWith('/')) {
+      const cleanPath = imageUrl.startsWith('/uploads') ? imageUrl : `/uploads${imageUrl}`;
+      return `${config.imageBaseUrl}${cleanPath}`;
+    }
+    return `${config.imageBaseUrl}/uploads/bookstores/${imageUrl}`;
   };
 
+  // Compact Loading skeleton
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 pt-24 pb-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center py-20">
-            <div className="relative inline-block mb-6">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-8 h-8 bg-blue-600 rounded-full animate-ping"></div>
-              </div>
+      <div className={`min-h-screen ${theme.bg.primary} pt-20 pb-8 relative`}>
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 relative z-10">
+          {/* Hero Skeleton */}
+          <div className="text-center mb-8">
+            <div className="h-8 w-40 bg-emerald-200/50 rounded-full mx-auto mb-4 animate-pulse"></div>
+            <div className="h-10 w-3/4 bg-emerald-200/50 rounded-xl mx-auto mb-3 animate-pulse"></div>
+          </div>
+
+          {/* Filters Skeleton */}
+          <div className="mb-6 bg-white/80 rounded-2xl p-4 shadow border border-emerald-100/50">
+            <div className="flex flex-col lg:flex-row gap-3">
+              <div className="flex-1 h-10 bg-emerald-100/50 rounded-lg animate-pulse"></div>
+              <div className="w-full lg:w-40 h-10 bg-emerald-100/50 rounded-lg animate-pulse"></div>
             </div>
-            <p className="text-xl text-gray-600 animate-pulse">Discovering amazing bookstores...</p>
+          </div>
+
+          {/* Grid Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="bg-white/80 rounded-2xl shadow border border-emerald-100/50 overflow-hidden">
+                <div className="h-40 bg-emerald-100/50 animate-pulse"></div>
+                <div className="p-4">
+                  <div className="h-5 bg-emerald-100/50 rounded mb-2 animate-pulse"></div>
+                  <div className="h-3 bg-emerald-100/50 rounded mb-3 animate-pulse"></div>
+                  <div className="h-12 bg-emerald-100/50 rounded animate-pulse"></div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
     );
   }
 
+  // Compact Error state
   if (error) {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 pt-24 pb-12">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center bg-white rounded-2xl shadow-xl p-8 md:p-12 border border-gray-200"
-        >
-          {/* Emoji and Title */}
-          <div className="text-7xl md:text-8xl mb-8 animate-pulse">📚✨</div>
-          
-          <h3 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">
-            Bookstores Are Coming Soon!
-          </h3>
-          
-          {/* Main Message */}
-          <div className="mb-8">
-            <p className="text-lg text-gray-600 mb-4">
-              Our bookstore directory is currently being prepared with amazing literary destinations.
-            </p>
-            <p className="text-gray-500">
-              We're curating the best bookstores to bring you an exceptional browsing experience.
-            </p>
-          </div>
-          
-          {/* Countdown/Schedule Box */}
-          <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-            <div className="flex items-center justify-center gap-4 mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-sm font-medium text-gray-700">Coming Soon</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                <span className="text-sm font-medium text-gray-700">In Development</span>
-              </div>
-            </div>
-            <p className="text-sm text-gray-500">
-              Stay tuned for the launch of our exclusive bookstore network!
-            </p>
-          </div>
-          
-          {/* Features Preview */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl mb-2">🔍</div>
-              <h4 className="font-medium text-gray-900 mb-1">Curated Selection</h4>
-              <p className="text-sm text-gray-500">Handpicked bookstores worldwide</p>
-            </div>
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl mb-2">⭐</div>
-              <h4 className="font-medium text-gray-900 mb-1">Verified Reviews</h4>
-              <p className="text-sm text-gray-500">Authentic reader experiences</p>
-            </div>
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl mb-2">📍</div>
-              <h4 className="font-medium text-gray-900 mb-1">Interactive Maps</h4>
-              <p className="text-sm text-gray-500">Easy location discovery</p>
-            </div>
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+    return (
+      <div className={`min-h-screen ${theme.bg.primary} pt-20 pb-8 relative`}>
+        <div className="max-w-xl mx-auto px-3 sm:px-4 lg:px-6 py-8 relative z-10">
+          <div className={`text-center ${theme.bg.card} rounded-2xl ${theme.shadow.card} p-6 ${theme.border.light} border`}>
+            <div className="text-6xl mb-4 text-emerald-400">📚</div>
+            <h3 className="text-xl font-bold text-emerald-900 mb-3">Connection Issue</h3>
+            <p className="text-sm text-emerald-700 mb-4">{error}</p>
             <button 
               onClick={fetchBookstores}
-              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-full hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+              className={`px-4 py-2 ${theme.gradient.primary} text-white text-sm font-medium rounded-lg hover:shadow transition-all flex items-center justify-center gap-2`}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Check Status
-            </button>
-            
-            <button className="px-6 py-3 bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 font-medium rounded-full hover:from-gray-200 hover:to-gray-300 transition-all duration-300 shadow border border-gray-300">
-              Notify Me on Launch
+              Try Again
             </button>
           </div>
-          
-          {/* Optional: Contact Info */}
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <p className="text-sm text-gray-500">
-              Questions? Contact us at{' '}
-              <a href="mailto:support@example.com" className="text-blue-600 hover:text-blue-700 underline">
-                support@example.com
-              </a>
-            </p>
-          </div>
-        </motion.div>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 pt-24 pb-12">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div className="max-w-screen mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 text-sm font-medium mb-6"
-            >
-              <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-              {bookstores.length} Bookstore Partners
-            </motion.div>
+    <div className={`max-h-screen ${theme.bg.primary} pt-5 pb-8 relative`}>
+      {/* Development banner */}
+      {!isProduction && (
+        <div className="fixed top-3 right-3 z-50">
+          <div className="bg-emerald-500 text-white px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+            <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
+            Dev
+          </div>
+        </div>
+      )}
+
+      {/* Main Container */}
+      <div className="max-w-screen mx-auto px-3 sm:px-4 lg:px-6">
+        {/* Compact Hero Section */}
+        <div className="mb-6">
+          <div className="text-center mb-5">
+            {/* Status Badge */}
+            <div className="inline-flex items-center px-3 py-1.5 rounded-full bg-white border border-emerald-100 text-emerald-800 text-xs font-medium mb-3 shadow-sm">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse"></span>
+              {bookstores.length} Bookstores
+            </div>
             
-            <motion.h1 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="text-5xl md:text-6xl font-bold text-gray-900 mb-6"
-            >
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
-                Literary Havens
-              </span>
-              <br />
-              <span className="text-3xl md:text-4xl text-gray-700">Our Bookstore Network</span>
-            </motion.h1>
-            
-            <motion.p 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed"
-            >
-              Discover curated bookstores from around the world. Each offers a unique reading experience and connects you with amazing literature.
-            </motion.p>
+            {/* Compact Title */}
+            <h1 className="text-2xl sm:text-3xl font-bold text-emerald-900 mb-2">
+              Literary Havens
+            </h1>
+            <p className="text-sm text-emerald-700/90 max-w-xl mx-auto">
+              Discover curated bookstores celebrating literature and community
+            </p>
           </div>
 
-          {/* Search and Filter Section */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="mb-12"
-          >
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-200/50">
-              <div className="flex flex-col lg:flex-row gap-4">
-                {/* Search Input */}
-                <div className="flex-1">
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </div>
-                    <input 
-                      type="text" 
-                      placeholder="Search by name, location, or description..."
-                      className="w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                    {searchTerm && (
-                      <button
-                        onClick={() => setSearchTerm('')}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 text-gray-400 hover:text-gray-600"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
+          {/* Compact Stats */}
+          <div className="grid grid-cols-4 gap-2 max-w-md mx-auto mb-5">
+            {[
+              { value: bookstores.length, label: 'Stores' },
+              { value: categories.length, label: 'Categories' },
+              { value: bookstores.filter(b => b.rating >= 4).length, label: '4+ Stars' },
+              { value: bookstores.filter(b => b.established < 2000).length, label: 'Classic' }
+            ].map((stat, index) => (
+              <div key={index} className="text-center p-2 bg-white/80 rounded-lg border border-emerald-100 shadow-sm">
+                <div className="text-base font-bold text-emerald-700">{stat.value}</div>
+                <div className="text-xs text-emerald-600">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
 
-                {/* Category Filter */}
+        {/* Compact Search and Filters */}
+        <div className="mb-5">
+          <div className={`${theme.bg.card} rounded-xl ${theme.shadow.card} p-4 ${theme.border.light} border`}>
+            <div className="flex flex-col lg:flex-row gap-3 mb-3">
+              {/* Search Input */}
+              <div className="flex-1">
                 <div className="relative">
-                  <select 
-                    className="appearance-none w-full lg:w-auto bg-white border border-gray-300 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg cursor-pointer"
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                  >
-                    <option value="">All Categories</option>
-                    {categories.map(category => (
-                      <option key={category} value={category}>{category}</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-4 w-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </div>
+                  <input 
+                    type="text" 
+                    placeholder="Search bookstores..."
+                    className="w-full pl-10 pr-8 py-2.5 bg-white border border-emerald-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-300 focus:border-emerald-400 text-sm text-emerald-900 placeholder-emerald-500/60"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-emerald-500 hover:text-emerald-700"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Quick Filter Chips */}
-              <div className="mt-4 flex flex-wrap gap-2">
+              {/* View Toggle */}
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setSelectedCategory('')}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
-                    !selectedCategory
-                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-lg transition-all ${viewMode === 'grid' 
+                    ? `${theme.gradient.primary} text-white shadow-sm` 
+                    : 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
                   }`}
                 >
-                  All Stores
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
                 </button>
-                {categories.slice(0, 4).map(category => (
-                  <button
-                    key={category}
-                    onClick={() => setSelectedCategory(selectedCategory === category ? '' : category)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
-                      selectedCategory === category
-                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {category}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-lg transition-all ${viewMode === 'list' 
+                    ? `${theme.gradient.primary} text-white shadow-sm` 
+                    : 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="relative">
+                <select 
+                  className="appearance-none w-full bg-white border border-emerald-100 rounded-lg px-3 py-2.5 pr-8 focus:outline-none focus:ring-1 focus:ring-emerald-300 focus:border-emerald-400 text-sm cursor-pointer text-emerald-900"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  <option value="default" className="text-emerald-500/60">Sort by</option>
+                  <option value="rating" className="text-emerald-900">Highest Rated</option>
+                  <option value="name" className="text-emerald-900">Name A-Z</option>
+                  <option value="established" className="text-emerald-900">Newest First</option>
+                </select>
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-emerald-500">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
               </div>
             </div>
-          </motion.div>
 
-          {/* Results Info */}
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="mb-8"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">
-                <span className="text-blue-600">{filteredBookstores.length}</span> Bookstore{filteredBookstores.length !== 1 ? 's' : ''} Found
-              </h2>
-              {selectedCategory && (
-                <span className="px-4 py-2 bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 rounded-full text-sm font-medium">
-                  Category: {selectedCategory}
+            {/* Category Filter Chips */}
+            <div className="flex flex-wrap gap-1">
+              <button
+                onClick={() => setSelectedCategory('')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${!selectedCategory
+                  ? `${theme.gradient.primary} text-white shadow-sm`
+                  : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                }`}
+              >
+                All
+              </button>
+              {categories.slice(0, 6).map(category => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(selectedCategory === category ? '' : category)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${selectedCategory === category
+                    ? `${theme.gradient.primary} text-white shadow-sm`
+                    : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+              {categories.length > 6 && (
+                <button className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200">
+                  +{categories.length - 6}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Results Count */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-emerald-900">
+              {filteredBookstores.length} bookstore{filteredBookstores.length !== 1 ? 's' : ''} found
+            </h2>
+            {selectedCategory && (
+              <div className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded text-xs font-medium">
+                {selectedCategory}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bookstore Grid/List */}
+        <div ref={gridRef}>
+          <AnimatePresence mode="wait">
+            {filteredBookstores.length === 0 ? (
+              <div className="text-center py-8 bg-white rounded-xl border border-emerald-100 shadow-sm mb-4">
+                <div className="text-4xl mb-3 text-emerald-400">🔍</div>
+                <h3 className="text-base font-medium text-emerald-900 mb-2">No bookstores found</h3>
+                <p className="text-sm text-emerald-600 mb-4">
+                  {searchTerm || selectedCategory 
+                    ? 'Try adjusting your search' 
+                    : 'Start adding bookstores'}
+                </p>
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setSelectedCategory('');
+                  }}
+                  className={`px-4 py-2 ${theme.gradient.primary} text-white text-sm font-medium rounded-lg hover:shadow transition-all`}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+                <AnimatePresence>
+                  {filteredBookstores.map((bookstore, index) => (
+                    <CompactBookstoreCard 
+                      key={bookstore.id} 
+                      bookstore={bookstore} 
+                      index={index}
+                      categoryColors={categoryColors}
+                      getImageUrl={getImageUrl}
+                      theme={theme}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <div className="space-y-3 mb-6">
+                <AnimatePresence>
+                  {filteredBookstores.map((bookstore, index) => (
+                    <CompactBookstoreListItem 
+                      key={bookstore.id} 
+                      bookstore={bookstore} 
+                      index={index}
+                      categoryColors={categoryColors}
+                      getImageUrl={getImageUrl}
+                      theme={theme}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Compact Stats Section */}
+        {filteredBookstores.length > 0 && (
+          <div className={`${theme.bg.card} rounded-xl p-4 border border-emerald-100 ${theme.shadow.card} mb-4`}>
+            <h3 className="text-sm font-semibold text-emerald-900 mb-3">Collection Stats</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { value: bookstores.length, label: 'Total Stores' },
+                { value: categories.length, label: 'Categories' },
+                { value: bookstores.filter(b => b.established).length, label: 'Established' },
+                { value: bookstores.filter(b => b.website).length, label: 'Online Stores' }
+              ].map((stat, index) => (
+                <div key={index} className="text-center p-2 bg-emerald-50/50 rounded-lg border border-emerald-100">
+                  <div className="text-base font-bold text-emerald-700">{stat.value}</div>
+                  <div className="text-xs text-emerald-600">{stat.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Compact Back to Top Button */}
+      {showBackToTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className={`fixed bottom-4 right-4 ${theme.gradient.primary} text-white p-2.5 rounded-full shadow-lg hover:shadow-xl transition-all z-40`}
+          aria-label="Scroll to top"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+};
+
+// Compact Grid Card Component
+const CompactBookstoreCard = ({ bookstore, index, categoryColors, getImageUrl, theme }) => {
+  const categoryColor = categoryColors[bookstore.category] || categoryColors['Default'];
+  const imageUrl = getImageUrl(bookstore.image_url);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ delay: index * 0.03 }}
+      className="group"
+    >
+      <Link 
+        to={`/bookstore/${bookstore.id}`}
+        onClick={(e) => {
+          e.preventDefault();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setTimeout(() => {
+            window.location.href = `/bookstore/${bookstore.id}`;
+          }, 300);
+        }}
+        className="block"
+      >
+        <div className={`relative ${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 overflow-hidden border ${theme.border.light} group-hover:border-emerald-300/50 h-full`}>
+          {/* Image Section */}
+          <div className="relative h-40 overflow-hidden">
+            {imageUrl ? (
+              <img 
+                src={imageUrl}
+                alt={bookstore.name}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  const parent = e.target.parentElement;
+                  parent.innerHTML = `
+                    <div class="w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center">
+                      <div class="text-4xl text-white/90">${bookstore.logo || '📚'}</div>
+                    </div>
+                  `;
+                }}
+              />
+            ) : (
+              <div className={`w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center`}>
+                <div className="text-4xl text-white/90">
+                  {bookstore.logo || '📚'}
+                </div>
+              </div>
+            )}
+            
+            {/* Category Badge */}
+            <div className="absolute top-2 right-2">
+              <span className={`px-2 py-1 bg-gradient-to-r ${categoryColor} text-white text-xs font-bold rounded shadow-sm`}>
+                {bookstore.category || 'Ind'}
+              </span>
+            </div>
+            
+            {/* Rating Badge */}
+            {(bookstore.rating || bookstore.rating === 0) && (
+              <div className="absolute top-2 left-2 flex items-center gap-0.5 bg-white/90 px-2 py-1 rounded shadow-sm">
+                <span className="text-amber-500 text-xs">★</span>
+                <span className="text-emerald-900 font-bold text-xs">
+                  {typeof bookstore.rating === 'number' 
+                    ? bookstore.rating.toFixed(1) 
+                    : parseFloat(bookstore.rating || 0).toFixed(1)}
+                </span>
+              </div>
+            )}
+          </div>
+          
+          {/* Content Section */}
+          <div className="p-3">
+            <h3 className="font-semibold text-sm text-emerald-900 mb-1 group-hover:text-emerald-700 transition-colors truncate">
+              {bookstore.name}
+            </h3>
+            <div className="flex items-center text-emerald-700 mb-2 text-xs">
+              <svg className="w-3 h-3 mr-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              </svg>
+              <span className="truncate">{bookstore.location}</span>
+            </div>
+
+            <p className="text-xs text-emerald-600 mb-3 line-clamp-2 h-8">
+              {bookstore.description || 'A sanctuary for book lovers'}
+            </p>
+
+            {/* Store Features */}
+            <div className="flex flex-wrap gap-1 mb-3">
+              {bookstore.established && (
+                <span className="inline-flex items-center px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded text-xs">
+                  Est. {bookstore.established}
+                </span>
+              )}
+              {bookstore.website && (
+                <span className="inline-flex items-center px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded text-xs">
+                  Online
                 </span>
               )}
             </div>
-          </motion.div>
-        </div>
-      </div>
 
-      {/* Bookstore Grid */}
-      <div className="max-w-screen mx-auto px-4 sm:px-6 lg:px-8">
-        <AnimatePresence>
-          {filteredBookstores.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="text-center py-20 bg-gradient-to-br from-white to-blue-50 rounded-3xl shadow-xl border border-gray-200/50 mb-8"
-            >
-              <div className="text-8xl mb-8 animate-pulse">🔍</div>
-              <h3 className="text-3xl font-bold text-gray-900 mb-4">No bookstores found</h3>
-              <p className="text-gray-600 text-lg max-w-md mx-auto mb-8">
-                {searchTerm || selectedCategory 
-                  ? 'Try adjusting your search criteria' 
-                  : 'No bookstores available in the database yet'}
-              </p>
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setSelectedCategory('');
-                }}
-                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-full hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
-              >
-                Reset Filters
-              </button>
-            </motion.div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              <AnimatePresence>
-                {filteredBookstores.map((bookstore, index) => {
-                  const categoryColor = categoryColors[bookstore.category] || categoryColors['Default'];
-                  const isHovered = hoveredBookstore === bookstore.id;
-                  
-                  return (
-                    <motion.div
-                      key={bookstore.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      whileHover={{ y: -8 }}
-                      onMouseEnter={() => setHoveredBookstore(bookstore.id)}
-                      onMouseLeave={() => setHoveredBookstore(null)}
-                      className="relative group"
-                    >
-                      {/* Glow Effect */}
-                      <div className={`absolute -inset-0.5 bg-gradient-to-r ${categoryColor} rounded-3xl blur opacity-0 group-hover:opacity-30 transition duration-1000 ${isHovered ? 'opacity-30' : ''}`}></div>
-                      
-                      {/* Card Container */}
-                      <Link to={`/bookstore/${bookstore.id}`}>
-                        <div className="relative bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-500 overflow-hidden border border-gray-200/50 h-full">
-                          {/* Image Section with Gradient Overlay */}
-                          <div className="relative h-56 overflow-hidden">
-                            {bookstore.image_url ? (
-                              <>
-                                <img 
-                                  src={getImageUrl(bookstore.image_url)}
-                                  alt={bookstore.name}
-                                  className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700"
-                                  onError={(e) => {
-                                    e.target.style.display = 'none';
-                                    const parent = e.target.parentElement;
-                                    parent.innerHTML = `
-                                      <div class="w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center">
-                                        <div class="text-6xl text-white/80">${bookstore.logo || '📚'}</div>
-                                      </div>
-                                    `;
-                                  }}
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                              </>
-                            ) : (
-                              <div className={`w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center`}>
-                                <div className="text-7xl text-white/80 transform group-hover:scale-125 transition-transform duration-500">
-                                  {bookstore.logo || '📚'}
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* Category Badge */}
-                            <div className="absolute top-4 right-4">
-                              <span className={`px-4 py-1.5 bg-gradient-to-r ${categoryColor} text-white text-xs font-bold rounded-full shadow-lg`}>
-                                {bookstore.category || 'Independent'}
-                              </span>
-                            </div>
-                            
-                            {/* Rating Badge */}
-                            {(bookstore.rating || bookstore.rating === 0) && (
-                              <div className="absolute top-4 left-4 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-lg">
-                                <span className="text-yellow-500">★</span>
-                                <span className="text-gray-900 font-bold">
-                                  {typeof bookstore.rating === 'number' 
-                                    ? bookstore.rating.toFixed(1) 
-                                    : parseFloat(bookstore.rating || 0).toFixed(1)}
-                                </span>
-                                {bookstore.reviews > 0 && (
-                                  <span className="text-gray-600 text-xs">({bookstore.reviews})</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* Content Section */}
-                          <div className="p-6">
-                            {/* Store Header */}
-                            <div className="mb-4">
-                              <h3 className="font-bold text-xl text-gray-900 mb-2 group-hover:text-blue-600 transition-colors duration-300 line-clamp-1">
-                                {bookstore.name}
-                              </h3>
-                              <div className="flex items-center text-gray-600">
-                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                                <span className="text-sm">{bookstore.location}</span>
-                              </div>
-                            </div>
-
-                            {/* Description */}
-                            <p className="text-gray-600 mb-6 line-clamp-2 leading-relaxed">
-                              {bookstore.description || 'A wonderful bookstore waiting for your discovery.'}
-                            </p>
-
-                            {/* Store Features */}
-                            <div className="flex flex-wrap gap-2 mb-6">
-                              {bookstore.established && (
-                                <span className="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
-                                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                  </svg>
-                                  Est. {bookstore.established}
-                                </span>
-                              )}
-                              {bookstore.website && (
-                                <span className="inline-flex items-center px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium">
-                                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                                  </svg>
-                                  Online
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Footer with CTA */}
-                            <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                              <div className="text-sm text-gray-500">
-                                View details
-                              </div>
-                              <div className="flex items-center text-blue-600 font-medium text-sm group-hover:text-blue-700 transition-colors">
-                                Explore Store
-                                <svg className="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                                </svg>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Hover Effect Line */}
-                          <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${categoryColor} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500`}></div>
-                        </div>
-                      </Link>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* Stats Section */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="mt-16 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl p-8 border border-blue-100"
-        >
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            <div className="text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
-                {bookstores.length}
-              </div>
-              <div className="text-gray-700 font-medium">Total Stores</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-purple-700 bg-clip-text text-transparent">
-                {categories.length}
-              </div>
-              <div className="text-gray-700 font-medium">Categories</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-green-600 to-green-700 bg-clip-text text-transparent">
-                {bookstores.filter(b => b.established).length}
-              </div>
-              <div className="text-gray-700 font-medium">Established</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-pink-600 to-pink-700 bg-clip-text text-transparent">
-                {bookstores.filter(b => b.website).length}
-              </div>
-              <div className="text-gray-700 font-medium">Online</div>
+            {/* Footer */}
+            <div className="flex items-center justify-between text-xs text-emerald-500">
+              <span>View details</span>
+              <span className="group-hover:text-emerald-700 transition-colors flex items-center">
+                Visit
+                <svg className="w-3 h-3 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </span>
             </div>
           </div>
-        </motion.div>
+        </div>
+      </Link>
+    </motion.div>
+  );
+};
 
-        {/* CTA Section */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="mt-12 text-center"
-        >
-          <p className="text-gray-600 text-lg mb-6">
-            Want to add your bookstore to our network?
-          </p>
-          <button className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-full hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl">
-            Become a Partner
-          </button>
-        </motion.div>
-      </div>
+// Compact List Item Component
+const CompactBookstoreListItem = ({ bookstore, index, categoryColors, getImageUrl, theme }) => {
+  const categoryColor = categoryColors[bookstore.category] || categoryColors['Default'];
+  const imageUrl = getImageUrl(bookstore.image_url);
 
-      {/* Animations */}
-      <style jsx>{`
-        @keyframes blob {
-          0% {
-            transform: translate(0px, 0px) scale(1);
-          }
-          33% {
-            transform: translate(30px, -50px) scale(1.1);
-          }
-          66% {
-            transform: translate(-20px, 20px) scale(0.9);
-          }
-          100% {
-            transform: translate(0px, 0px) scale(1);
-          }
-        }
-        
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        
-        .line-clamp-1 {
-          display: -webkit-box;
-          -webkit-line-clamp: 1;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-        
-        .line-clamp-2 {
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-      `}</style>
-    </div>
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
+      transition={{ delay: index * 0.03 }}
+      className="group"
+    >
+      <Link 
+        to={`/bookstore/${bookstore.id}`}
+        onClick={(e) => {
+          e.preventDefault();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setTimeout(() => {
+            window.location.href = `/bookstore/${bookstore.id}`;
+          }, 300);
+        }}
+        className="block"
+      >
+        <div className={`${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 border ${theme.border.light} group-hover:border-emerald-300/50`}>
+          <div className="flex items-center p-3">
+            {/* Image */}
+            <div className="flex-shrink-0 mr-3">
+              {imageUrl ? (
+                <div className="w-16 h-16 rounded-lg overflow-hidden border border-emerald-100">
+                  <img 
+                    src={imageUrl}
+                    alt={bookstore.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      const parent = e.target.parentElement;
+                      parent.innerHTML = `
+                        <div class="w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center">
+                          <div class="text-2xl text-white/90">${bookstore.logo || '📚'}</div>
+                        </div>
+                      `;
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className={`w-16 h-16 rounded-lg bg-gradient-to-br ${categoryColor} flex items-center justify-center`}>
+                  <div className="text-2xl text-white/90">
+                    {bookstore.logo || '📚'}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold text-sm text-emerald-900 truncate">
+                  {bookstore.name}
+                </h3>
+                {(bookstore.rating || bookstore.rating === 0) && (
+                  <div className="flex items-center gap-0.5 bg-emerald-50 px-2 py-0.5 rounded text-xs">
+                    <span className="text-amber-500">★</span>
+                    <span className="text-emerald-900 font-bold">
+                      {typeof bookstore.rating === 'number' 
+                        ? bookstore.rating.toFixed(1) 
+                        : parseFloat(bookstore.rating || 0).toFixed(1)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex items-center text-emerald-700 mb-1 text-xs">
+                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                </svg>
+                <span className="truncate">{bookstore.location}</span>
+              </div>
+              
+              <p className="text-xs text-emerald-600 mb-2 line-clamp-1">
+                {bookstore.description || 'Bookstore'}
+              </p>
+              
+              <div className="flex items-center gap-1">
+                <span className={`px-2 py-0.5 bg-gradient-to-r ${categoryColor} text-white text-xs rounded`}>
+                  {bookstore.category || 'Ind'}
+                </span>
+                {bookstore.established && (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-xs rounded">
+                    Est. {bookstore.established}
+                  </span>
+                )}
+              </div>
+            </div>
+            
+            {/* Arrow */}
+            <div className="ml-2 text-emerald-400 group-hover:text-emerald-600 transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </Link>
+    </motion.div>
   );
 };
 

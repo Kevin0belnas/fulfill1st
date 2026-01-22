@@ -1,143 +1,304 @@
+import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+
 const Cinematic = () => {
-  const movies = [
-    { 
-      id: 1, 
-      title: 'The Lord of the Rings', 
-      director: 'Peter Jackson', 
-      rating: '9.0',
-      year: '2001-2003',
-      basedOn: 'J.R.R. Tolkien',
-      genre: 'Fantasy'
+  const location = useLocation();
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [hoveredVideo, setHoveredVideo] = useState(null);
+  const [playingVideo, setPlayingVideo] = useState(null);
+  const [videoProgress, setVideoProgress] = useState({});
+  const videoRefs = useRef([]);
+
+  // Compact theme palette
+  const theme = {
+    bg: {
+      primary: 'bg-gradient-to-br from-emerald-25 via-green-50/50 to-emerald-50',
+      card: 'bg-white/95 backdrop-blur-sm',
+      dark: 'bg-gradient-to-r from-emerald-800 to-green-900'
     },
-    { 
-      id: 2, 
-      title: 'Harry Potter Series', 
-      director: 'Multiple Directors', 
-      rating: '8.5',
-      year: '2001-2011',
-      basedOn: 'J.K. Rowling',
-      genre: 'Fantasy'
+    text: {
+      primary: 'text-emerald-900',
+      secondary: 'text-emerald-800',
+      muted: 'text-emerald-600/90',
+      white: 'text-white'
     },
-    { 
-      id: 3, 
-      title: 'The Shawshank Redemption', 
-      director: 'Frank Darabont', 
-      rating: '9.3',
-      year: '1994',
-      basedOn: 'Stephen King',
-      genre: 'Drama'
+    border: {
+      light: 'border-emerald-100/70',
+      medium: 'border-emerald-200'
     },
-    { 
-      id: 4, 
-      title: 'The Godfather', 
-      director: 'Francis Ford Coppola', 
-      rating: '9.2',
-      year: '1972',
-      basedOn: 'Mario Puzo',
-      genre: 'Crime'
+    gradient: {
+      primary: 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-green-500',
     },
-    { 
-      id: 5, 
-      title: 'To Kill a Mockingbird', 
-      director: 'Robert Mulligan', 
-      rating: '8.2',
-      year: '1962',
-      basedOn: 'Harper Lee',
-      genre: 'Drama'
+    shadow: {
+      card: 'shadow-lg shadow-emerald-100/40',
+      hover: 'shadow-xl shadow-emerald-200/40'
+    }
+  };
+
+  const videos = [
+    {
+      id: 1,
+      title: 'The 10 Little Indians (of Successful Screenplays)',
+      description: 'Lessons from the masters of moviemaking on writing successful screenplays.',
+      author: 'Dickson Lane',
+      fileName: 'tenLittle.mp4',
+      category: 'Documentary',
+      duration: '1:41',
+      uploadDate: '2024',
     },
-    { 
-      id: 6, 
-      title: 'The Great Gatsby', 
-      director: 'Baz Luhrmann', 
-      rating: '7.2',
-      year: '2013',
-      basedOn: 'F. Scott Fitzgerald',
-      genre: 'Romance'
+    {
+      id: 2,
+      title: 'Kakaki, The Medicine Woman',
+      description: 'A haunting exploration of gender empowerment across native cultures.',
+      author: 'Dickson Lane',
+      fileName: 'KAKAKI2.mp4',
+      category: 'Short Film',
+      duration: '0:56',
+      uploadDate: '2024',
     },
   ];
 
+  // Scroll to top
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const timer = setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
+
+  // Back to top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.pageYOffset > 300);
+    };
+    
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handlePlayVideo = (id) => {
+    if (playingVideo === id) {
+      videoRefs.current[id]?.pause();
+      setPlayingVideo(null);
+    } else {
+      videoRefs.current[playingVideo]?.pause();
+      videoRefs.current[id]?.play();
+      setPlayingVideo(id);
+    }
+  };
+
+  const handleSeek = (id, e) => {
+    const video = videoRefs.current[id];
+    if (!video) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    video.currentTime = percent * video.duration;
+    setVideoProgress((p) => ({ ...p, [id]: percent * 100 }));
+  };
+
+  const formatTime = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+  };
+
   return (
-    <div className="page-container">
-      <div className="page-content">
-        <h1 className="page-title">Cinematic Adaptations</h1>
-        <p className="page-description">
-          Explore movies based on famous books and literary works. See how your favorite stories come to life on screen!
-        </p>
-
-        {/* Movies Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {movies.map((movie) => (
-            <div key={movie.id} className="card group hover:shadow-xl transition-all duration-300">
-              {/* Movie Poster */}
-              <div className="relative h-64 overflow-hidden rounded-t-xl">
-                <div className="absolute inset-0 bg-linear-to-r from-purple-600 to-blue-600 group-hover:scale-105 transition-transform duration-300">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-8xl opacity-20">🎬</span>
-                  </div>
-                </div>
-                <div className="absolute top-4 right-4 bg-yellow-500 text-white px-3 py-1 rounded-full font-bold">
-                  {movie.rating}/10
-                </div>
-                <div className="absolute bottom-4 left-4">
-                  <span className="bg-black/70 text-white px-3 py-1 rounded text-sm">
-                    {movie.year}
-                  </span>
-                </div>
-              </div>
-
-              {/* Movie Info */}
-              <div className="p-6">
-                <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">
-                  {movie.title}
-                </h3>
-                
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-gray-600">
-                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-                    </svg>
-                    Directed by {movie.director}
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
-                    </svg>
-                    Based on {movie.basedOn}
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M17 10a7 7 0 11-14 0 7 7 0 0114 0zm-7-3a3 3 0 100 6 3 3 0 000-6z" clipRule="evenodd" />
-                    </svg>
-                    Genre: {movie.genre}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-3">
-                  <button className="btn-primary flex-1">
-                    Watch Trailer
-                  </button>
-                  <button className="btn-outline border-gray-300 text-gray-700 hover:border-blue-600 hover:text-blue-600">
-                    Book Details
-                  </button>
-                </div>
-              </div>
+    <div className={`min-h-screen ${theme.bg.primary} pt-5 pb-8 relative`}>
+      {/* Main Container */}
+      <div className="max-w-screen mx-auto px-3 sm:px-4 lg:px-6">
+        {/* Compact Hero Section */}
+        <div className="mb-6">
+          <div className="text-center mb-5">
+            {/* Status Badge */}
+            <div className="inline-flex items-center px-3 py-1.5 rounded-full bg-white border border-emerald-100 text-emerald-800 text-xs font-medium mb-3 shadow-sm">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse"></span>
+              {videos.length} Videos
             </div>
-          ))}
+            
+            {/* Compact Title */}
+            <h1 className="text-2xl sm:text-3xl font-bold text-emerald-900 mb-2">
+              Cinematic Creations
+            </h1>
+            <p className="text-sm text-emerald-700/90 max-w-xl mx-auto">
+              A curated collection of original cinematic works by Dickson Lane
+            </p>
+          </div>
+
+          {/* Compact Stats */}
+          <div className="grid grid-cols-3 gap-2 max-w-md mx-auto mb-5">
+            {[
+              { value: videos.length, label: 'Videos' },
+              { value: new Set(videos.map(v => v.category)).size, label: 'Genres' },
+              { value: videos.filter(v => v.uploadDate === '2024').length, label: 'Recent' }
+            ].map((stat, index) => (
+              <div key={index} className="text-center p-2 bg-white/80 rounded-lg border border-emerald-100 shadow-sm">
+                <div className="text-base font-bold text-emerald-700">{stat.value}</div>
+                <div className="text-xs text-emerald-600">{stat.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Feature Section */}
-        <div className="mt-12 bg-linear-to-r from-blue-50 to-purple-50 rounded-2xl p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Did You Know?</h2>
-          <p className="text-gray-700 mb-4">
-            Many successful movies started as books! Some adaptations become even more popular than their 
-            original literary works, introducing the stories to new audiences worldwide.
+        {/* Videos Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <AnimatePresence>
+            {videos.map((video, index) => {
+              const isPlaying = playingVideo === video.id;
+              const progress = videoProgress[video.id] || 0;
+              const isHovered = hoveredVideo === video.id;
+
+              return (
+                <motion.div
+                  key={video.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="group"
+                  onMouseEnter={() => setHoveredVideo(video.id)}
+                  onMouseLeave={() => setHoveredVideo(null)}
+                >
+                  <div className={`relative ${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 overflow-hidden border ${theme.border.light} group-hover:border-emerald-300/50 h-full`}>
+                    {/* Video Container */}
+                    <div className="relative h-80 bg-black">
+                      <video
+                        ref={(el) => (videoRefs.current[video.id] = el)}
+                        src={`/Videos/${video.fileName}`}
+                        className="w-full h-full object-cover"
+                        preload="metadata"
+                        onClick={() => handlePlayVideo(video.id)}
+                        onTimeUpdate={() => {
+                          const v = videoRefs.current[video.id];
+                          if (v?.duration) {
+                            setVideoProgress((p) => ({
+                              ...p,
+                              [video.id]: (v.currentTime / v.duration) * 100,
+                            }));
+                          }
+                        }}
+                      />
+
+                      {/* Progress Bar */}
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-900/30">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-green-500"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+
+                      {/* Scrub Area */}
+                      <div
+                        className="absolute bottom-0 left-0 right-0 h-4 cursor-pointer"
+                        onClick={(e) => handleSeek(video.id, e)}
+                      />
+
+                      {/* Play/Pause Overlay */}
+                      {(!isPlaying || isHovered) && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <button
+                            onClick={() => handlePlayVideo(video.id)}
+                            className="w-12 h-12 rounded-full bg-white/20 backdrop-blur border border-white/30 flex items-center justify-center hover:scale-105 transition-transform"
+                          >
+                            {isPlaying ? (
+                              <svg className="w-5 h-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M7 6h2v8H7zm4 0h2v8h-2z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-5 h-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M6 4l10 6-10 6V4z" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Time Display */}
+                      <div className="absolute bottom-2 left-2 text-xs text-white bg-black/50 px-1.5 py-0.5 rounded">
+                        {videoRefs.current[video.id]
+                          ? formatTime(videoRefs.current[video.id].currentTime)
+                          : '0:00'}{' '}
+                        / {video.duration}
+                      </div>
+
+                      {/* Category Badge */}
+                      <div className="absolute top-2 right-2">
+                        <span className="px-2 py-1 bg-gradient-to-r from-emerald-500 to-green-500 text-white text-xs font-medium rounded shadow-sm">
+                          {video.category}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Video Info */}
+                    <div className="p-3">
+                      <h3 className="font-semibold text-sm text-emerald-900 mb-1 group-hover:text-emerald-700 transition-colors truncate">
+                        {video.title}
+                      </h3>
+                      <p className="text-xs text-emerald-600 mb-2 line-clamp-2 h-8">
+                        {video.description}
+                      </p>
+
+                      <div className="flex items-center justify-between text-xs text-emerald-700 mb-3">
+                        <span>By {video.author}</span>
+                        <span>{video.uploadDate}</span>
+                      </div>
+
+                      {/* Controls */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handlePlayVideo(video.id)}
+                          className={`flex-1 py-2 text-xs ${theme.gradient.primary} text-white rounded-lg hover:shadow transition-all`}
+                        >
+                          {isPlaying ? 'Pause' : 'Play Video'}
+                        </button>
+
+                        <button
+                          onClick={() => videoRefs.current[video.id]?.requestFullscreen()}
+                          className="px-3 py-2 border border-emerald-300 rounded-lg text-emerald-700 hover:bg-emerald-50 transition-colors text-xs"
+                        >
+                          ⛶
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+
+        {/* Compact Info Section */}
+        <div className={`${theme.bg.card} rounded-xl p-4 border border-emerald-100 ${theme.shadow.card} mb-4`}>
+          <h3 className="text-sm font-semibold text-emerald-900 mb-2">About This Collection</h3>
+          <p className="text-xs text-emerald-600 mb-3">
+            A curated selection of cinematic works exploring themes of storytelling, culture, and creative expression.
           </p>
-          <button className="btn-outline border-blue-600 text-blue-600">
-            Explore More Adaptations →
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="text-center p-2 bg-emerald-50/50 rounded-lg border border-emerald-100">
+              <div className="text-sm font-bold text-emerald-700">{videos.length}</div>
+              <div className="text-xs text-emerald-600">Total Videos</div>
+            </div>
+            <div className="text-center p-2 bg-emerald-50/50 rounded-lg border border-emerald-100">
+              <div className="text-sm font-bold text-emerald-700">Documentary & Short Film</div>
+              <div className="text-xs text-emerald-600">Genres</div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Compact Back to Top Button */}
+      {showBackToTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className={`fixed bottom-4 right-4 ${theme.gradient.primary} text-white p-2.5 rounded-full shadow-lg hover:shadow-xl transition-all z-40`}
+          aria-label="Scroll to top"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 };
