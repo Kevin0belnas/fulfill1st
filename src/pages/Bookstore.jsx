@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 // Environment-aware configuration
 const ENV_CONFIG = {
   development: {
-    apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
-    imageBaseUrl: import.meta.env.VITE_IMAGE_BASE_URL || 'http://localhost:3000'
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://192.168.68.4:3000/api',
+    imageBaseUrl: import.meta.env.VITE_IMAGE_BASE_URL || 'http://192.168.68.4:3000'
   },
   production: {
     apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'https://api.fulfill1st.com/api',

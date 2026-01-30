@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.68.4:3000/api';
 const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL ? 
 import.meta.env.VITE_API_BASE_URL.replace('/api', '') : 
-  'http://localhost:3000';
+  'http://192.168.68.4:3000';
 
 const BookEvents = () => {
   const [events, setEvents] = useState([]);

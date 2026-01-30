@@ -5,7 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { useLocation } from 'react-router-dom';
 
 const ManageSocialMediaLinks = () => {
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.68.4:3000/api';
   const location = useLocation();
   
   // State for social links data
@@ -85,9 +85,14 @@ const ManageSocialMediaLinks = () => {
         credentials: 'include'
       });
       
-      if (!response.ok) throw new Error('Failed to fetch social media links');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Fetch error response:', errorText);
+        throw new Error('Failed to fetch social media links');
+      }
       
       const data = await response.json();
+      console.log('Fetched social links:', data);
       setSocialLinks(data);
       setFilteredLinks(data);
     } catch (error) {
@@ -105,6 +110,7 @@ const ManageSocialMediaLinks = () => {
   };
 
   const openEditModal = (link) => {
+    console.log('Editing link:', link);
     setFormData({
       authorName: link.authorName || '',
       authorEmail: link.authorEmail || '',
@@ -233,11 +239,13 @@ const ManageSocialMediaLinks = () => {
       }
 
       const url = editingLink 
-        ? `${API_BASE_URL}/social-media-links/${editingLink._id}`
+        ? `${API_BASE_URL}/social-media-links/${editingLink.id}`
         : `${API_BASE_URL}/social-media-links`;
       
       const method = editingLink ? 'PUT' : 'POST';
 
+      console.log('Sending request to:', url, 'Method:', method);
+      
       const response = await fetch(url, {
         method,
         body: formDataToSend,
@@ -245,15 +253,20 @@ const ManageSocialMediaLinks = () => {
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
         throw new Error(editingLink ? 'Failed to update social media link' : 'Failed to add social media link');
       }
 
+      const result = await response.json();
+      console.log('Server response:', result);
+      
       toast.success(editingLink ? 'Social media link updated successfully!' : 'Social media link added successfully!');
       fetchSocialLinks();
       closeModal();
     } catch (error) {
       console.error('Error saving social media link:', error);
-      toast.error(error.message);
+      toast.error(error.message || 'An error occurred');
     } finally {
       setFormLoading(false);
     }
@@ -270,8 +283,15 @@ const ManageSocialMediaLinks = () => {
         credentials: 'include'
       });
 
-      if (!response.ok) throw new Error('Failed to delete social media link');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Delete error response:', errorText);
+        throw new Error('Failed to delete social media link');
+      }
 
+      const result = await response.json();
+      console.log('Delete response:', result);
+      
       toast.success('Social media link deleted successfully');
       fetchSocialLinks();
     } catch (error) {
@@ -461,14 +481,14 @@ const ManageSocialMediaLinks = () => {
                   </tr>
                 ) : (
                   filteredLinks.map((link) => (
-                    <tr key={link.id || link._id} className="hover:bg-emerald-50 transition duration-150">
+                    <tr key={link.id} className="hover:bg-emerald-50 transition duration-150">
                       <td className="px-6 py-5">
                         <div className="flex items-center space-x-3">
                           <div className="flex-shrink-0">
-                            {imagePreview || link.authorImage ? (
+                            {link.authorImage ? (
                               <img
                                 className="h-12 w-12 rounded-xl object-cover border-2 border-emerald-100"
-                                src={link.authorImage ? `${API_BASE_URL}${link.authorImage}` : imagePreview}
+                                src={`${API_BASE_URL}${link.authorImage}`}
                                 alt={link.authorName}
                                 onError={(e) => {
                                   e.target.onerror = null;
@@ -539,7 +559,7 @@ const ManageSocialMediaLinks = () => {
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(link.id || link._id)}
+                            onClick={() => handleDelete(link.id)}
                             className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition duration-200 flex items-center text-sm font-medium"
                             title="Delete"
                           >

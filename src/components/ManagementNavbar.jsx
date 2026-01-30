@@ -1,7 +1,7 @@
 // components/ManagementNavbar.jsx
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.68.4:3000/api';
 
 const ManagementNavbar = () => {
   const navigate = useNavigate();
