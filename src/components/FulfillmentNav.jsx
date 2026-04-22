@@ -80,7 +80,7 @@ const FulfillmentNav = () => {
               Cinematic
             </NavLink>
             
-            <NavLink 
+            {/* <NavLink 
               to="/tradpub" 
               className={({ isActive }) => 
                 isActive 
@@ -89,7 +89,7 @@ const FulfillmentNav = () => {
               }
             >
               Trad Pub
-            </NavLink>
+            </NavLink> */}
           </div>
 
           {/* No auth buttons in public navbar */}

@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import { createGlobalStyle } from 'styled-components';
+import ScrollToTop from './components/ScrollToTop'; // ADD THIS IMPORT
+
 
 // Import all components
  import Navbar from './components/Navbar';
@@ -87,6 +89,8 @@ export default function App() {
     <>
       <GlobalStyle />
       <Router>
+                <ScrollToTop /> {/* ADD THIS LINE - MUST be inside Router */}
+
         <Routes>
           {/* Routes WITH Navbar */}
           <Route element={<AdminLayout />}>

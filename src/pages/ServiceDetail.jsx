@@ -2,7 +2,19 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
 import ChatBubble from '../components/ChatBubble';
 import ReCAPTCHA from "react-google-recaptcha";
-import { supabase } from '../supabaseClient';
+
+// Environment-aware configuration
+const ENV_CONFIG = {
+  development: {
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
+  },
+  production: {
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'https://api.fulfill1st.com/api',
+  }
+};
+
+const currentEnv = import.meta.env.MODE || 'development';
+const config = ENV_CONFIG[currentEnv];
 
 const paymentLogos = {
   visa: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Visa_Inc._logo.svg/2560px-Visa_Inc._logo.svg.png',
@@ -1658,7 +1670,7 @@ const writingServiceDetails = {
  "https://api.backlinko.com/app/uploads/2019/12/the-classic-list-post.png",
 "https://ceblog.s3.amazonaws.com/wp-content/uploads/2022/11/09160815/8-Examples-of-Blog-Post-Templates-2.png",
   ],
-    modalImage: "https://brands-up.ch/public/images/uploads/97bc703442fa9a38ed92e3047355fb18486c1219.png",
+    modalImage: "/images/article-blog.jpg",
     path:"/services/writing/articles-&-blog-posts",  
     price: "$250" ,
       section: "writing",area:"content-writing"
@@ -2038,7 +2050,7 @@ const ServiceDetail = () => {
   const chatBubbleRef = React.useRef();
   const [recaptchaValue, setRecaptchaValue] = useState(null);
 
-  // Add these state variables at the top of your component
+  // Touch handlers
   const [touchStartX, setTouchStartX] = useState(0);
   const [touchEndX, setTouchEndX] = useState(0);
 
@@ -2074,9 +2086,9 @@ const ServiceDetail = () => {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [location.pathname]); 
+  }, [location.pathname]);
 
-  // Locate service (keep your existing service data logic)
+  // Locate service data
   const serviceData =
     section === 'graphics' ? graphicsServiceDetails :
     section === 'business' ? businessServiceDetails :
@@ -2091,6 +2103,134 @@ const ServiceDetail = () => {
   );
 
   const service = serviceName ? serviceData[serviceName] : null;
+
+  // API helper function
+  const apiCall = async (endpoint, options = {}) => {
+    const url = `${config.apiBaseUrl}${endpoint}`;
+    const defaultOptions = {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    };
+    
+    const response = await fetch(url, { ...defaultOptions, ...options });
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Something went wrong');
+    }
+    
+    return data;
+  };
+
+  // Load reviews from backend
+  const loadReviews = async () => {
+    if (!serviceSlug || !section) return;
+
+    try {
+      setIsLoading(true);
+      setError('');
+      
+      const response = await apiCall(`/reviews/${section}/${serviceSlug}?page=${currentPage}&limit=${reviewsPerPage}`);
+      
+      if (response.success) {
+        setReviews(response.data);
+      } else {
+        throw new Error(response.error || 'Failed to load reviews');
+      }
+      
+    } catch (err) {
+      setError('Failed to load reviews');
+      console.error("Error loading reviews:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load reviews when serviceSlug, section, or currentPage changes
+  useEffect(() => { 
+    loadReviews(); 
+  }, [serviceSlug, section, currentPage]);
+
+  if (!service) {
+    return <div>Service not found</div>;
+  }
+
+  // Paginate and average
+  const totalPages = Math.ceil(reviews.length / reviewsPerPage);
+  const displayedReviews = reviews;
+  
+  const averageRating = reviews.length
+    ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(2)
+    : "0.00";
+
+  // Persist user info
+  const saveUserInfo = () => {
+    localStorage.setItem('visitorName', visitorName);
+    localStorage.setItem('visitorEmail', visitorEmail);
+    setHasSubmittedInfo(true);
+  };
+
+  // Submit review to backend
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    // if (!hasSubmittedInfo && !recaptchaValue) {
+    //   setError('Please complete the CAPTCHA verification');
+    //   return;
+    // }
+
+    if (!visitorName || !visitorEmail) {
+      setError('Please enter name & email');
+      return;
+    }
+    
+    if (userRating === 0 && !newReview.trim()) {
+      setError('Please provide either a rating or review');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError('');
+      
+      if (!hasSubmittedInfo) {
+        saveUserInfo();
+      }
+      
+      // Submit review to backend
+      const response = await apiCall('/reviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          service_slug: serviceSlug,
+          section: section,
+          name: visitorName,
+          email: visitorEmail,
+          text: newReview.trim() || null,
+          rating: userRating || null,
+          recaptcha: recaptchaValue
+        })
+      });
+
+      if (response.success) {
+        setSuccessMessage('Thank you for your feedback!');
+        setNewReview('');
+        setUserRating(0);
+        setRecaptchaValue(null);
+        setCurrentPage(1); // Reset to first page
+        loadReviews(); // Reload reviews to show the new one
+      } else {
+        throw new Error(response.error || 'Failed to submit review');
+      }
+      
+    } catch (err) {
+      setError(err.message || 'Failed to submit review');
+      console.error("Error submitting review:", err);
+    } finally {
+      setTimeout(() => setSuccessMessage(''), 3000);
+      setIsLoading(false);
+    }
+  };
 
   // Open gallery with all images
   const openGallery = () => {
@@ -2115,110 +2255,7 @@ const ServiceDetail = () => {
     });
   };
 
-  // Load reviews from Supabase
-  const loadReviews = async () => {
-    if (!serviceSlug || !section) return;
-
-    try {
-      setIsLoading(true);
-      
-      // Fetch reviews from Supabase
-      const { data, error } = await supabase
-        .from('service_reviews')
-        .select('*')
-        .eq('service_slug', serviceSlug)
-        .eq('section', section)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      setReviews(data || []);
-      
-    } catch (err) {
-      setError('Failed to load reviews');
-      console.error("Error loading reviews:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Load reviews when serviceSlug or section changes
-  useEffect(() => { 
-    loadReviews(); 
-  }, [serviceSlug, section]);
-
-  if (!service) {
-    return <div>Service not found</div>;
-  }
-
-  // Paginate and average
-  const totalPages = Math.ceil(reviews.length / reviewsPerPage);
-  const displayedReviews = reviews.slice(
-    (currentPage - 1) * reviewsPerPage,
-    currentPage * reviewsPerPage
-  );
-  
-  const averageRating = reviews.length
-    ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(2)
-    : "0.00";
-
-  // Persist user info
-  const saveUserInfo = () => {
-    localStorage.setItem('visitorName', visitorName);
-    localStorage.setItem('visitorEmail', visitorEmail);
-    setHasSubmittedInfo(true);
-  };
-
-  // Submit review to Supabase
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!hasSubmittedInfo && !recaptchaValue) {
-      setError('Please complete the CAPTCHA verification');
-      return;
-    }
-
-    if (!visitorName || !visitorEmail) return setError('Please enter name & email');
-    if (userRating === 0 && !newReview.trim()) return setError('Please provide either a rating or review');
-
-    try {
-      setIsLoading(true);
-      setError('');
-      
-      if (!hasSubmittedInfo) {
-        saveUserInfo();
-      }
-      
-      // Insert review into Supabase
-      const { data, error } = await supabase
-        .from('service_reviews')
-        .insert({
-          service_slug: serviceSlug,
-          section: section,
-          name: visitorName,
-          email: visitorEmail,
-          text: newReview.trim() || null,
-          rating: userRating || null,
-          created_at: new Date().toISOString()
-        })
-        .select();
-
-      if (error) throw error;
-
-      setSuccessMessage('Thank you for your feedback!');
-      setNewReview('');
-      setUserRating(0);
-      loadReviews(); // Reload reviews to show the new one
-      
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setTimeout(() => setSuccessMessage(''), 3000);
-      setIsLoading(false);
-    }
-  };
-
-  // Touch handlers (keep your existing code)
+  // Touch handlers
   const handleTouchStart = (e) => {
     setTouchStartX(e.touches[0].clientX);
   };
@@ -2302,182 +2339,172 @@ const ServiceDetail = () => {
         </div>
       </div>
 
-   {/* Image Popup with Fixed-Position Arrows - Only for non-video services */}
-{section !== 'video' && isImagePopupOpen && (
-  <div style={{
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.9)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000
-  }}>
-    {/* Left Arrow - Hidden on small screens if not enough space */}
-    <div style={{
-      position: 'fixed',
-      left: 'clamp(10px, 3vw, 50px)',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      display: window.innerWidth < 400 ? 'none' : 'block'
-    }}>
-      <button 
-        onClick={(e) => {
-          e.stopPropagation();
-          handleImageNavigation('prev');
-        }}
-        style={{
-          background: 'rgba(255, 255, 255, 0.9)',
-          border: '2px solid #087830',
-          borderRadius: '50%',
-          width: 'clamp(30px, 6vw, 50px)',
-          height: 'clamp(30px, 6vw, 50px)',
-          color: '#087830',
-          fontSize: 'clamp(1rem, 3vw, 1.5rem)',
-          cursor: 'pointer',
+      {/* Image Popup - Keep exactly as is */}
+      {section !== 'video' && isImagePopupOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.9)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-          ':hover': {
-            background: '#087830',
-            color: 'white'
-          }
-        }}
-      >
-        ‹
-      </button>
-    </div>
+          zIndex: 1000
+        }}>
+          {/* Left Arrow */}
+          <div style={{
+            position: 'fixed',
+            left: 'clamp(10px, 3vw, 50px)',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: window.innerWidth < 400 ? 'none' : 'block'
+          }}>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleImageNavigation('prev');
+              }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.9)',
+                border: '2px solid #087830',
+                borderRadius: '50%',
+                width: 'clamp(30px, 6vw, 50px)',
+                height: 'clamp(30px, 6vw, 50px)',
+                color: '#087830',
+                fontSize: 'clamp(1rem, 3vw, 1.5rem)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+              }}
+            >
+              ‹
+            </button>
+          </div>
 
-    {/* Image Container with touch events for mobile */}
-    <div 
-      style={{ 
-        maxWidth: '90%',
-        maxHeight: '90%',
-        margin: '0 clamp(10px, 3vw, 80px)',
-        touchAction: 'pan-y'
-      }}
-      onClick={(e) => {
-        // Close on tap outside image on mobile
-        if (e.target === e.currentTarget) {
-          setIsImagePopupOpen(false);
-        }
-      }}
-    >
-      <img 
-        src={service.images[currentImageIndex]} 
-        alt={`${service.title} ${currentImageIndex + 1}`}
-        style={{
-          maxWidth: '100%',
-          maxHeight: '80vh',
-          objectFit: 'contain',
-          userSelect: 'none'
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      />
-    </div>
-
-    {/* Right Arrow - Hidden on small screens if not enough space */}
-    <div style={{
-      position: 'fixed',
-      right: 'clamp(10px, 3vw, 50px)',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      display: window.innerWidth < 400 ? 'none' : 'block'
-    }}>
-      <button 
-        onClick={(e) => {
-          e.stopPropagation();
-          handleImageNavigation('next');
-        }}
-        style={{
-          background: 'rgba(255, 255, 255, 0.9)',
-          border: '2px solid #087830',
-          borderRadius: '50%',
-          width: 'clamp(30px, 6vw, 50px)',
-          height: 'clamp(30px, 6vw, 50px)',
-          color: '#087830',
-          fontSize: 'clamp(1rem, 3vw, 1.5rem)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-          ':hover': {
-            background: '#087830',
-            color: 'white'
-          }
-        }}
-      >
-        ›
-      </button>
-    </div>
-
-    {/* Close Button - Always visible */}
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        setIsImagePopupOpen(false);
-      }}
-      style={{
-        position: 'fixed',
-        top: 'clamp(10px, 3vw, 20px)',
-        right: 'clamp(10px, 3vw, 20px)',
-        background: 'rgba(255, 255, 255, 0.9)',
-        border: 'none',
-        borderRadius: '50%',
-        width: 'clamp(30px, 6vw, 40px)',
-        height: 'clamp(30px, 6vw, 40px)',
-        color: '#087830',
-        fontSize: 'clamp(1rem, 3vw, 1.5rem)',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
-        zIndex: 1001
-      }}
-    >
-      ×
-    </button>
-
-    {/* Mobile navigation dots - only show on small screens */}
-    {window.innerWidth < 768 && (
-      <div style={{
-        position: 'fixed',
-        bottom: '20px',
-        left: 0,
-        right: 0,
-        display: 'flex',
-        justifyContent: 'center',
-        gap: '10px'
-      }}>
-        {service.images.map((_, index) => (
+          {/* Image Container */}
           <div 
-            key={index}
-            onClick={() => setCurrentImageIndex(index)}
-            style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              backgroundColor: index === currentImageIndex ? '#087830' : 'white',
-              cursor: 'pointer',
-              opacity: 0.7
+            style={{ 
+              maxWidth: '90%',
+              maxHeight: '90%',
+              margin: '0 clamp(10px, 3vw, 80px)',
+              touchAction: 'pan-y'
             }}
-          />
-        ))}
-      </div>
-    )}
-  </div>
-)} 
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsImagePopupOpen(false);
+              }
+            }}
+          >
+            <img 
+              src={service.images[currentImageIndex]} 
+              alt={`${service.title} ${currentImageIndex + 1}`}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '80vh',
+                objectFit: 'contain',
+                userSelect: 'none'
+              }}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            />
+          </div>
 
+          {/* Right Arrow */}
+          <div style={{
+            position: 'fixed',
+            right: 'clamp(10px, 3vw, 50px)',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: window.innerWidth < 400 ? 'none' : 'block'
+          }}>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleImageNavigation('next');
+              }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.9)',
+                border: '2px solid #087830',
+                borderRadius: '50%',
+                width: 'clamp(30px, 6vw, 50px)',
+                height: 'clamp(30px, 6vw, 50px)',
+                color: '#087830',
+                fontSize: 'clamp(1rem, 3vw, 1.5rem)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+              }}
+            >
+              ›
+            </button>
+          </div>
 
-{/* Gallery Popup */}
+          {/* Close Button */}
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsImagePopupOpen(false);
+            }}
+            style={{
+              position: 'fixed',
+              top: 'clamp(10px, 3vw, 20px)',
+              right: 'clamp(10px, 3vw, 20px)',
+              background: 'rgba(255, 255, 255, 0.9)',
+              border: 'none',
+              borderRadius: '50%',
+              width: 'clamp(30px, 6vw, 40px)',
+              height: 'clamp(30px, 6vw, 40px)',
+              color: '#087830',
+              fontSize: 'clamp(1rem, 3vw, 1.5rem)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+              zIndex: 1001
+            }}
+          >
+            ×
+          </button>
+
+          {/* Mobile navigation dots */}
+          {window.innerWidth < 768 && (
+            <div style={{
+              position: 'fixed',
+              bottom: '20px',
+              left: 0,
+              right: 0,
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '10px'
+            }}>
+              {service.images.map((_, index) => (
+                <div 
+                  key={index}
+                  onClick={() => setCurrentImageIndex(index)}
+                  style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '50%',
+                    backgroundColor: index === currentImageIndex ? '#087830' : 'white',
+                    cursor: 'pointer',
+                    opacity: 0.7
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Gallery Popup */}
       {isGalleryOpen && (
         <div style={{
           position: 'fixed',
@@ -2493,7 +2520,6 @@ const ServiceDetail = () => {
           zIndex: 1000,
           padding: 'clamp(10px, 3vw, 20px)',
         }}>
-          {/* <h3 style={{ color: 'white', marginBottom: 'clamp(10px, 3vw, 20px)',fontSize: 'clamp(1.2rem, 5vw, 1.5rem)' }}>Gallery</h3> */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(150px, 40vw, 300px), 1fr))',
@@ -2507,9 +2533,6 @@ const ServiceDetail = () => {
               <div key={index} style={{
                 cursor: 'pointer',
                 transition: 'transform 0.2s',
-                ':hover': {
-                  transform: 'scale(1.02)'
-                }
               }}>
                 <img 
                   src={img} 
@@ -2555,92 +2578,75 @@ const ServiceDetail = () => {
         </div>
       )}
 
-      {/* Video Samples Section - Only for video services */}
-            {section === 'video' && service.sampleVideos && (
-              <div style={{margin: 'clamp(20px, 5vw, 40px) 0'}}>
-               <h3 style={{ 
-                borderBottom: '2px solid #087830', 
-                paddingBottom: 'clamp(5px, 1.5vw, 10px)',
-                fontFamily: 'Arial, sans-serif',
-                fontSize: 'clamp(0.9rem, 3vw, 1rem)'
-              }}>
-                  {/* Sample Videos */}
-                </h3>
+      {/* Video Samples Section */}
+      {section === 'video' && service.sampleVideos && (
+        <div style={{margin: 'clamp(20px, 5vw, 40px) 0'}}>
+          <h3 style={{ 
+            borderBottom: '2px solid #087830', 
+            paddingBottom: 'clamp(5px, 1.5vw, 10px)',
+            fontFamily: 'Arial, sans-serif',
+            fontSize: 'clamp(0.9rem, 3vw, 1rem)'
+          }}>
+          </h3>
+          <div style={{
+            color: '#087830',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(250px, 80vw, 300px), 1fr))',
+            gap: 'clamp(10px, 3vw, 20px)',
+            marginTop: 'clamp(10px, 3vw, 20px)',
+            fontFamily: 'Arial, sans-serif', 
+            fontSize: 'clamp(0.8rem, 3vw, 1rem)'
+          }}>
+            {service.sampleVideos.map((video, index) => (
+              <div key={index}>
+                <h4>{video.title}</h4>
                 <div style={{
-                  color: '#087830',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(250px, 80vw, 300px), 1fr))',
-                  gap: 'clamp(10px, 3vw, 20px)',
-                  marginTop: 'clamp(10px, 3vw, 20px)',
-                  fontFamily: 'Arial, sans-serif', 
-                  fontSize: 'clamp(0.8rem, 3vw, 1rem)'
+                  position: 'relative',
+                  paddingBottom: '56.25%',
+                  borderRadius: '5px',
+                  overflow: 'hidden'
                 }}>
-                  {service.sampleVideos.map((video, index) => (
-                    <div key={index}>
-                      <h4>{video.title}</h4>
-                      <div style={{
-                        position: 'relative',
-                        paddingBottom: '56.25%', // 16:9 aspect ratio
-                        borderRadius: '5px',
-                        overflow: 'hidden'
-                      }}>
-                        <video
-                          controls
-                          autoPlay
-                          muted // Required for autoplay in most browsers
-                          loop // Optional: makes video loop
-                          playsInline // For iOS compatibility
-                          style={{
-                            position: 'absolute',
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                               borderColor: 'black 10px',
-                          }}
-                        >
-                          <source src={video.videoFile} type="video/mp4" />
-                          Your browser does not support the video tag.
-                        </video>
-                        
-                        {/* Fallback thumbnail that disappears when video loads */}
-                        <img
-                          src={video.thumbnail}
-                          alt={video.title}
-                          style={{
-                            position: 'absolute',
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            opacity: 0,
-                            transition: 'opacity 0.3s',
-                            pointerEvents: 'none'
-                          }}
-                          onError={(e) => e.target.style.opacity = 1} // Show if video fails
-                        />
-                      </div>
-                    </div>
-                  ))}
+                  <video
+                    controls
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  >
+                    <source src={video.videoFile} type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                  <img
+                    src={video.thumbnail}
+                    alt={video.title}
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      opacity: 0,
+                      transition: 'opacity 0.3s',
+                      pointerEvents: 'none'
+                    }}
+                    onError={(e) => e.target.style.opacity = 1}
+                  />
                 </div>
               </div>
-            )}
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Visitor Info */}
       {!hasSubmittedInfo && (
         <div style={{fontFamily: 'Franklin Gothic Medium', marginTop: 'clamp(20px, 5vw, 40px)',fontSize: 'clamp(0.9rem, 3vw, 1rem)', color: '#087830',width: '100%'}}>
           <h3>Tell Us About You</h3>
-          {/* <input
-            placeholder="Name"
-            value={visitorName}
-            onChange={e => setVisitorName(e.target.value)}
-            style={{ padding: '8px', marginRight: '10px', width: '200px' }}
-          />
-          <input
-            placeholder="Email"
-            type="email"
-            value={visitorEmail}
-            onChange={e => setVisitorEmail(e.target.value)}
-            style={{ padding: '8px', width: '300px' }}
-          /> */}
           <div style={{
             flexDirection: 'column',
             gap: 'clamp(10px, 2vw, 14px)',
@@ -2713,20 +2719,14 @@ const ServiceDetail = () => {
           />
         </div>
 
-        {/* <ReCAPTCHA
-        sitekey="6LeU6J0rAAAAAPl4nlzjVyZBkqUyERjyA5SxfBL7" // Replace with your actual site key
-        onChange={(value) => setRecaptchaValue(value)}
-        style={{ margin: '15px 0' }}
-      /> */}
-
-      {/* Show CAPTCHA only if user hasn't submitted info yet */}
-    {!hasSubmittedInfo && (
-      <ReCAPTCHA
-        sitekey="6LeU6J0rAAAAAPl4nlzjVyZBkqUyERjyA5SxfBL7" // Replace with your actual site key
-        onChange={(value) => setRecaptchaValue(value)}
-        style={{ margin: '15px 0' }}
-      />
-    )}
+        {/* Show CAPTCHA only if user hasn't submitted info yet */}
+        {!hasSubmittedInfo && (
+          <ReCAPTCHA
+            sitekey="6LeU6J0rAAAAAPl4nlzjVyZBkqUyERjyA5SxfBL7"
+            onChange={(value) => setRecaptchaValue(value)}
+            style={{ margin: '15px 0' }}
+          />
+        )}
 
         <button
           type="submit"

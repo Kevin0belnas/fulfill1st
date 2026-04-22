@@ -35,7 +35,7 @@ const ManagementNavbar = () => {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://192.168.68.13:5000/api/logout', {
+      await fetch(`API_BASE_URL/logout`, {
         method: 'POST',
         credentials: 'include'
       });

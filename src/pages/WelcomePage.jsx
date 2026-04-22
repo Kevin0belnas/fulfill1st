@@ -636,7 +636,7 @@ const Services = () => {
    const services = [
     { name: 'Website Development', image: '/images/webdev.jpg', path: '/services/programming/website-development' }, 
     { name: 'Video Editing', image: '/images/vidEdit.jpeg', path: '/services/video/video-editing' },
-    { name: 'Articles & Blog Posts', image: 'https://brands-up.ch/public/images/uploads/97bc703442fa9a38ed92e3047355fb18486c1219.png', path: '/services/writing/articles-&-blog-posts' },
+    { name: 'Articles & Blog Posts', image: '/images/article-blog.jpg', path: '/services/writing/articles-&-blog-posts' },
     { name: 'Book Design', image: '/images/bookDesign.jpg', path: '/services/graphics/book-design' },
     { name: 'Voice Over', image: '/images/voice.jpg', path: '/services/music/voice-over' },
     { name: 'Proofreading & Editing', image: 'https://harvardproofreader.co.za/wp-content/uploads/2023/11/istockphoto-184928153-612x612-1.jpg', path: '/services/writing/proofreading-&-editing' },
@@ -791,10 +791,10 @@ const carouselRef = useRef(null);
             <FooterLink to="/terms">Terms of Service</FooterLink>
             <Divider>|</Divider>
             <FooterLink to="/refunds">Refund Policy</FooterLink>
-            <Divider>|</Divider>
-            <FooterLink to="https://app.autobooks.co/pay/page-and-pixel-digital-solutions">
+            {/* <Divider>|</Divider> */}
+            {/* <FooterLink to="https://app.autobooks.co/pay/page-and-pixel-digital-solutions">
               Payment Link
-            </FooterLink>
+            </FooterLink> */}
             {/* <FooterLink>
             <a 
               href="https://app.autobooks.co/pay/page-and-pixel-digital-solutions" 
