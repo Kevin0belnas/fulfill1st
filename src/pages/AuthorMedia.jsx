@@ -4,7 +4,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Environment-aware configuration - NO CHANGES
+// Environment-aware configuration
 const ENV_CONFIG = {
   development: {
     apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://192.168.68.4:3000/api',
@@ -16,12 +16,12 @@ const ENV_CONFIG = {
   }
 };
 
-// Detect environment - NO CHANGES
+// Detect environment
 const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
 const config = ENV_CONFIG[isProduction ? 'production' : 'development'];
 
 const AuthorMedia = () => {
-  const [socialLinks, setSocialLinks] = useState([]);
+  const [authors, setAuthors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -143,6 +143,22 @@ const AuthorMedia = () => {
       text: 'text-emerald-800',
       border: 'border-emerald-200/60'
     },
+    'tiktok': { 
+      icon: '🎵', 
+      label: 'TikTok', 
+      bg: 'bg-gradient-to-br from-emerald-100/80 to-black/20',
+      hover: 'hover:from-emerald-200 hover:to-black/30',
+      text: 'text-emerald-800',
+      border: 'border-emerald-200/60'
+    },
+    'threads': { 
+      icon: '🧵', 
+      label: 'Threads', 
+      bg: 'bg-gradient-to-br from-emerald-100/80 to-purple-100/80',
+      hover: 'hover:from-emerald-200 hover:to-purple-200',
+      text: 'text-emerald-800',
+      border: 'border-emerald-200/60'
+    },
     'other': { 
       icon: '🔗', 
       label: 'Other', 
@@ -215,12 +231,12 @@ const AuthorMedia = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Fetch social media links
+  // Fetch authors data
   useEffect(() => {
-    fetchSocialLinks();
+    fetchAuthors();
   }, []);
 
-  const fetchSocialLinks = async () => {
+  const fetchAuthors = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -235,21 +251,67 @@ const AuthorMedia = () => {
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
       const data = await response.json();
-      const activeLinks = data.success 
-        ? (data.data || []).filter(link => link.isActive)
-        : (data || []).filter(link => link.isActive);
-      setSocialLinks(activeLinks);
+      
+      // Handle response format (now returns grouped by author)
+      let authorsList = [];
+      if (data.success && data.data) {
+        authorsList = data.data;
+      } else if (Array.isArray(data)) {
+        // Legacy format - group by author
+        authorsList = groupLinksByAuthor(data);
+      } else {
+        authorsList = data.authors || [];
+      }
+      
+      setAuthors(authorsList);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching authors:', error);
       if (!isProduction) {
         await tryFallbackEndpoints();
       } else {
         setError(`Failed to load. ${error.message}`);
-        setSocialLinks([]);
+        setAuthors([]);
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  const groupLinksByAuthor = (links) => {
+    const authorMap = new Map();
+    
+    links.forEach(link => {
+      if (!authorMap.has(link.authorName)) {
+        authorMap.set(link.authorName, {
+          authorName: link.authorName,
+          authorEmail: link.authorEmail,
+          authorImage: link.authorImage,
+          isActive: link.isActive,
+          links: [],
+          createdAt: link.createdAt,
+          updatedAt: link.updatedAt
+        });
+      }
+      
+      const author = authorMap.get(link.authorName);
+      author.links.push({
+        id: link.id,
+        platform: link.platform,
+        username: link.username,
+        url: link.url,
+        description: link.description,
+        customLabel: link.customLabel,
+        displayOrder: link.displayOrder,
+        isActive: link.isActive,
+        createdAt: link.createdAt,
+        updatedAt: link.updatedAt
+      });
+      
+      // Sort links by display order
+      author.links.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+    });
+    
+    return Array.from(authorMap.values());
   };
 
   const tryFallbackEndpoints = async () => {
@@ -264,90 +326,112 @@ const AuthorMedia = () => {
         const response = await fetch(endpoint, { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
-          const activeLinks = data.success 
-            ? (data.data || []).filter(link => link.isActive)
-            : (data || []).filter(link => link.isActive);
-          setSocialLinks(activeLinks);
+          let authorsList = [];
+          if (data.success && data.data) {
+            authorsList = data.data;
+          } else if (Array.isArray(data)) {
+            authorsList = groupLinksByAuthor(data);
+          }
+          setAuthors(authorsList);
           return;
         }
       } catch (err) {
-        console.error('Error:', err);
+        console.error('Error with fallback endpoint:', err);
         continue;
       }
     }
     
-    setError('Backend server not found.');
-    setSocialLinks([]);
-  };
-
-  // Extract unique authors
-  const getUniqueAuthors = () => {
-    const authorMap = new Map();
-    
-    socialLinks.forEach(link => {
-      if (!authorMap.has(link.authorName)) {
-        authorMap.set(link.authorName, {
-          name: link.authorName,
-          email: link.authorEmail,
-          image: link.authorImage,
-          links: [link],
-          platforms: new Set([link.platform]),
-          description: link.description
-        });
-      } else {
-        const existingAuthor = authorMap.get(link.authorName);
-        existingAuthor.links.push(link);
-        existingAuthor.platforms.add(link.platform);
-      }
-    });
-    
-    return Array.from(authorMap.values()).map(author => ({
-      ...author,
-      totalLinks: author.links.length,
-      platforms: Array.from(author.platforms)
-    })).sort((a, b) => b.totalLinks - a.totalLinks);
+    setError('Unable to connect to the server. Please check your connection.');
+    setAuthors([]);
   };
 
   // Get filtered authors
   const getFilteredAuthors = () => {
-    const uniqueAuthors = getUniqueAuthors();
-    if (!searchTerm) return uniqueAuthors;
+    let filtered = authors;
     
-    return uniqueAuthors.filter(author =>
-      author.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      author.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      author.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Apply platform filter
+    if (activeFilter !== 'all') {
+      filtered = authors.filter(author =>
+        author.links?.some(link => link.platform === activeFilter)
+      );
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter(author =>
+        author.authorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        author.authorEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        author.links?.some(link => 
+          link.platform?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          link.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          link.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      );
+    }
+    
+    return filtered;
   };
 
   // Get stats
   const getStats = () => {
-    const uniqueAuthors = getUniqueAuthors();
-    const totalLinks = socialLinks.length;
+    const totalAuthors = authors.length;
+    const totalLinks = authors.reduce((sum, author) => sum + (author.links?.length || 0), 0);
+    
+    // Count platform usage across all links
+    const platformCount = {};
+    authors.forEach(author => {
+      author.links?.forEach(link => {
+        platformCount[link.platform] = (platformCount[link.platform] || 0) + 1;
+      });
+    });
+    
+    const mostUsedPlatform = Object.entries(platformCount).sort((a, b) => b[1] - a[1])[0]?.[0] || 'None';
     
     return {
-      totalAuthors: uniqueAuthors.length,
+      totalAuthors,
       totalLinks,
-      uniquePlatforms: [...new Set(socialLinks.map(link => link.platform))].length,
-      mostConnectedAuthor: uniqueAuthors[0]?.name || 'None',
-      mostUsedPlatform: Object.entries(
-        socialLinks.reduce((acc, link) => {
-          acc[link.platform] = (acc[link.platform] || 0) + 1;
-          return acc;
-        }, {})
-      ).sort((a, b) => b[1] - a[1])[0]?.[0] || 'None'
+      uniquePlatforms: Object.keys(platformCount).length,
+      mostUsedPlatform,
+      avgLinksPerAuthor: totalAuthors > 0 ? (totalLinks / totalAuthors).toFixed(1) : 0
     };
   };
 
-  // Image URL handler
-  const getImageUrl = (imageUrl) => {
-    if (!imageUrl) return null;
-    if (imageUrl.startsWith('http')) return imageUrl;
-    if (imageUrl.startsWith('/')) {
-      const cleanPath = imageUrl.startsWith('/uploads') ? imageUrl : `/uploads${imageUrl}`;
-      return `${config.imageBaseUrl}${cleanPath}`;
+  // Enhanced image URL handler for Base64
+  const getImageUrl = (imageData) => {
+    if (!imageData) return null;
+    
+    // Handle Base64 images (starts with data:image)
+    if (imageData.startsWith('data:image')) {
+      return imageData;
     }
-    return `${config.imageBaseUrl}/uploads/authors/${imageUrl}`;
+    
+    // Handle full URLs
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
+      return imageData;
+    }
+    
+    // Handle paths starting with /uploads/
+    if (imageData.startsWith('/uploads/')) {
+      return `${config.imageBaseUrl}${imageData}`;
+    }
+    
+    // Handle just filenames
+    if (imageData.includes('.jpg') || imageData.includes('.jpeg') || imageData.includes('.png') || 
+        imageData.includes('.gif') || imageData.includes('.webp')) {
+      return `${config.imageBaseUrl}/uploads/social-media/${imageData}`;
+    }
+    
+    // If it's a JSON string (legacy), try to parse
+    try {
+      const parsed = JSON.parse(imageData);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed[0]; // Return first image if array
+      }
+      return parsed;
+    } catch (e) {
+      // Not JSON, return as is
+      return imageData;
+    }
   };
 
   const stats = getStats();
@@ -357,7 +441,6 @@ const AuthorMedia = () => {
   if (loading) {
     return (
       <div className={`min-h-screen ${theme.bg.primary} pt-20 pb-8 relative overflow-hidden`}>
-        {/* Animated background */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-20 -right-20 w-64 h-64 bg-emerald-300/10 rounded-full blur-3xl animate-float"></div>
           <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-cyan-300/10 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
@@ -365,7 +448,6 @@ const AuthorMedia = () => {
         </div>
         
         <div className="max-w-screen mx-auto px-3 sm:px-4 lg:px-6 relative z-10">
-          {/* Enhanced Hero Skeleton */}
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -376,12 +458,10 @@ const AuthorMedia = () => {
             <div className="h-4 w-80 max-w-xs mx-auto bg-emerald-300/20 rounded-full animate-pulse-subtle"></div>
           </motion.div>
 
-          {/* Enhanced Search Skeleton */}
           <div className={`mb-6 ${theme.bg.glass} glass-effect rounded-3xl p-5 ${theme.shadow.soft} border ${theme.border.accent}`}>
             <div className="h-14 bg-gradient-to-r from-white/40 to-white/20 rounded-xl animate-pulse-subtle"></div>
           </div>
 
-          {/* Enhanced Grid Skeleton */}
           <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {[...Array(8)].map((_, i) => (
               <motion.div
@@ -419,7 +499,6 @@ const AuthorMedia = () => {
   if (error) {
     return (
       <div className={`min-h-screen ${theme.bg.primary} pt-20 pb-8 relative overflow-hidden`}>
-        {/* Animated background */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-20 -right-20 w-64 h-64 bg-emerald-300/10 rounded-full blur-3xl animate-float"></div>
           <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-cyan-300/10 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
@@ -435,7 +514,7 @@ const AuthorMedia = () => {
             <h3 className="text-2xl sm:text-3xl font-bold text-emerald-900 mb-4">Connection Required</h3>
             <p className="text-emerald-700 mb-6 leading-relaxed text-base sm:text-lg">{error}</p>
             <button 
-              onClick={fetchSocialLinks}
+              onClick={fetchAuthors}
               className={`px-6 py-3.5 ${theme.gradient.primary} text-white font-semibold rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3 mx-auto min-w-[200px]`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -461,7 +540,7 @@ const AuthorMedia = () => {
         <div className="absolute bottom-1/3 right-1/4 w-64 h-64 bg-cyan-300/5 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Development banner - Enhanced */}
+      {/* Development banner */}
       {!isProduction && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
@@ -485,17 +564,15 @@ const AuthorMedia = () => {
           className="mb-8 sm:mb-10 pt-4"
         >
           <div className="text-center mb-6 sm:mb-8">
-            {/* Status Badge */}
             <motion.div 
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               className="inline-flex items-center px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-100 to-cyan-100 border border-emerald-200/80 text-emerald-800 text-sm font-semibold mb-5 shadow-sm"
             >
               <span className="w-2 h-2 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full mr-2 animate-pulse-subtle"></span>
-              {stats.totalAuthors} Authors • {stats.totalLinks} Profiles
+              {stats.totalAuthors} Authors • {stats.totalLinks} Profiles • {stats.uniquePlatforms} Platforms
             </motion.div>
             
-            {/* Enhanced Title with gradient */}
             <h1 className="text-3xl xs:text-4xl sm:text-5xl md:text-6xl font-bold bg-gradient-to-r from-emerald-700 via-emerald-600 to-cyan-600 bg-clip-text text-transparent mb-4 px-2">
               Author Media Hub
             </h1>
@@ -509,8 +586,8 @@ const AuthorMedia = () => {
             {[
               { value: stats.totalAuthors, label: 'Featured Authors', icon: '👥', color: 'from-emerald-400 to-emerald-300' },
               { value: stats.totalLinks, label: 'Social Profiles', icon: '🔗', color: 'from-cyan-400 to-cyan-300' },
-              { value: stats.uniquePlatforms, label: 'Platforms', icon: '🌐', color: 'from-emerald-400 to-cyan-400' },
-              { value: (stats.totalLinks / stats.totalAuthors || 0).toFixed(1), label: 'Avg/Author', icon: '📊', color: 'from-cyan-400 to-emerald-400' }
+              { value: stats.uniquePlatforms, label: 'Active Platforms', icon: '🌐', color: 'from-emerald-400 to-cyan-400' },
+              { value: stats.avgLinksPerAuthor, label: 'Avg Links/Author', icon: '📊', color: 'from-cyan-400 to-emerald-400' }
             ].map((stat, index) => (
               <motion.div 
                 key={index}
@@ -537,7 +614,6 @@ const AuthorMedia = () => {
           transition={{ delay: 0.2 }}
           className={`${theme.bg.glass} glass-effect rounded-3xl ${theme.shadow.soft} p-4 sm:p-5 ${theme.border.accent} border mb-6 sm:mb-8`}
         >
-          {/* Search Input */}
           <div className="mb-4 sm:mb-5">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 sm:pl-4 flex items-center pointer-events-none">
@@ -547,7 +623,7 @@ const AuthorMedia = () => {
               </div>
               <input 
                 type="text" 
-                placeholder="Search authors by name, email, or description..."
+                placeholder="Search authors, platforms, or usernames..."
                 className="w-full pl-10 sm:pl-12 pr-10 py-3 sm:py-4 bg-white/90 border border-emerald-200 rounded-xl sm:rounded-2xl focus:outline-none focus:ring-3 focus:ring-emerald-300/50 focus:border-emerald-400 text-sm sm:text-base text-emerald-900 placeholder-emerald-500/60 shadow-inset-emerald transition-all duration-300"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -565,7 +641,6 @@ const AuthorMedia = () => {
             </div>
           </div>
 
-          {/* Enhanced View Toggle and Filters */}
           <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <button
@@ -594,8 +669,7 @@ const AuthorMedia = () => {
               </button>
             </div>
 
-            {/* Enhanced Platform Filters with scroll */}
-            <div className="flex-1 overflow-x-auto scrollbar-hide pb-2 -mx-2 px-2">
+            <div className="flex-1 overflow-x-auto scrollbar-hide pb-2">
               <div className="flex gap-2 min-w-max">
                 <button
                   onClick={() => setActiveFilter('all')}
@@ -606,17 +680,17 @@ const AuthorMedia = () => {
                 >
                   All Platforms
                 </button>
-                {['twitter', 'instagram', 'youtube', 'website', 'facebook', 'linkedin', 'blog', 'goodreads'].map(platform => (
+                {Object.entries(platformData).map(([key, data]) => (
                   <button
-                    key={platform}
-                    onClick={() => setActiveFilter(platform)}
-                    className={`px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-300 flex items-center gap-2 ${activeFilter === platform
+                    key={key}
+                    onClick={() => setActiveFilter(key)}
+                    className={`px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-300 flex items-center gap-2 ${activeFilter === key
                       ? `${theme.gradient.primary} text-white ${theme.shadow.soft} shadow-lg`
-                      : `${platformData[platform]?.bg} ${platformData[platform]?.text} ${platformData[platform]?.border} border hover:shadow-md hover:scale-105`
+                      : `${data.bg} ${data.text} border hover:shadow-md hover:scale-105`
                     }`}
                   >
-                    <span className="text-base">{platformData[platform]?.icon}</span>
-                    <span>{platformData[platform]?.label}</span>
+                    <span className="text-base">{data.icon}</span>
+                    <span>{data.label}</span>
                   </button>
                 ))}
               </div>
@@ -637,7 +711,7 @@ const AuthorMedia = () => {
               {searchTerm && ` for "${searchTerm}"`}
             </h2>
             {activeFilter !== 'all' && (
-              <div className={`px-4 py-2.5 rounded-xl ${platformData[activeFilter]?.bg} ${platformData[activeFilter]?.border} border flex items-center gap-2 shadow-sm`}>
+              <div className={`px-4 py-2.5 rounded-xl ${platformData[activeFilter]?.bg} border flex items-center gap-2 shadow-sm`}>
                 <span className="text-lg">{platformData[activeFilter]?.icon}</span>
                 <span className="text-sm font-medium text-emerald-900">{platformData[activeFilter]?.label}</span>
               </div>
@@ -657,7 +731,7 @@ const AuthorMedia = () => {
               <div className="text-7xl sm:text-8xl mb-6 text-emerald-400/50 animate-float">🔍</div>
               <h3 className="text-xl sm:text-2xl font-bold text-emerald-900 mb-4">No Authors Found</h3>
               <p className="text-emerald-600 mb-6 sm:mb-8 text-base sm:text-lg">
-                {searchTerm ? `No results for "${searchTerm}"` : 'No authors available'}
+                {searchTerm || activeFilter !== 'all' ? 'Try changing your search or filters' : 'No authors available'}
               </p>
               <button
                 onClick={() => {
@@ -672,13 +746,12 @@ const AuthorMedia = () => {
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
               {filteredAuthors.map((author, index) => (
-                <EnhancedAuthorCard 
-                  key={author.name} 
+                <AuthorCard 
+                  key={author.authorName} 
                   author={author} 
-                  index={index}
                   platformData={platformData}
                   getImageUrl={getImageUrl}
-                  openAuthorProfile={() => setSelectedAuthor(author)}
+                  onAuthorClick={() => setSelectedAuthor(author)}
                   theme={theme}
                 />
               ))}
@@ -686,13 +759,12 @@ const AuthorMedia = () => {
           ) : (
             <div className="space-y-4 sm:space-y-5 mb-8">
               {filteredAuthors.map((author, index) => (
-                <EnhancedAuthorListItem 
-                  key={author.name} 
+                <AuthorListItem 
+                  key={author.authorName} 
                   author={author} 
-                  index={index}
                   platformData={platformData}
                   getImageUrl={getImageUrl}
-                  openAuthorProfile={() => setSelectedAuthor(author)}
+                  onAuthorClick={() => setSelectedAuthor(author)}
                   theme={theme}
                 />
               ))}
@@ -716,7 +788,7 @@ const AuthorMedia = () => {
                 { value: stats.totalAuthors, label: 'Featured Authors', icon: '👥' },
                 { value: stats.totalLinks, label: 'Total Profiles', icon: '🔗' },
                 { value: stats.uniquePlatforms, label: 'Active Platforms', icon: '🌐' },
-                { value: stats.mostUsedPlatform, label: 'Top Platform', icon: '🏆' }
+                { value: stats.mostUsedPlatform.charAt(0).toUpperCase() + stats.mostUsedPlatform.slice(1), label: 'Most Used', icon: '🏆' }
               ].map((stat, index) => (
                 <div key={index} className="text-center p-4 bg-gradient-to-br from-emerald-50/80 to-cyan-50/80 rounded-2xl border border-emerald-100/60 hover:border-emerald-200 transition-colors duration-300">
                   <div className="text-2xl sm:text-3xl mb-2 sm:mb-3 text-emerald-600">{stat.icon}</div>
@@ -748,7 +820,7 @@ const AuthorMedia = () => {
 
       {/* Enhanced Author Profile Modal */}
       {selectedAuthor && (
-        <EnhancedAuthorProfileModal 
+        <AuthorProfileModal 
           author={selectedAuthor}
           platformData={platformData}
           getImageUrl={getImageUrl}
@@ -760,9 +832,10 @@ const AuthorMedia = () => {
   );
 };
 
-// Enhanced Author Card Component
-const EnhancedAuthorCard = ({ author, platformData, getImageUrl, openAuthorProfile, theme }) => {
-  const imageUrl = getImageUrl(author.image);
+// Author Card Component
+const AuthorCard = ({ author, platformData, getImageUrl, onAuthorClick, theme }) => {
+  const imageUrl = getImageUrl(author.authorImage);
+  const uniquePlatforms = [...new Set(author.links?.map(link => link.platform) || [])];
 
   return (
     <motion.div
@@ -770,14 +843,13 @@ const EnhancedAuthorCard = ({ author, platformData, getImageUrl, openAuthorProfi
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -8, scale: 1.02 }}
       transition={{ type: "spring", stiffness: 300 }}
-      onClick={openAuthorProfile}
+      onClick={onAuthorClick}
       className="group cursor-pointer h-full"
     >
       <div className={`relative ${theme.bg.card} rounded-3xl ${theme.shadow.card} transition-all duration-500 overflow-hidden border ${theme.border.light} group-hover:border-emerald-300/60 h-full backdrop-blur-sm`}>
-        {/* Animated background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/30 via-transparent to-cyan-50/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
         
-        {/* Image Section with gradient overlay */}
+        {/* Image Section */}
         <div className="relative h-40 sm:h-44 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-600 via-emerald-500 to-cyan-500">
             <div className="absolute inset-0 flex items-center justify-center p-4">
@@ -788,16 +860,18 @@ const EnhancedAuthorCard = ({ author, platformData, getImageUrl, openAuthorProfi
                 >
                   <img 
                     src={imageUrl} 
-                    alt={author.name}
+                    alt={author.authorName}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       const parent = e.target.parentElement;
-                      parent.innerHTML = `
-                        <div class="w-full h-full bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center">
-                          <div class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent">${author.name?.charAt(0).toUpperCase() || 'A'}</div>
-                        </div>
-                      `;
+                      if (parent) {
+                        parent.innerHTML = `
+                          <div class="w-full h-full bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center">
+                            <div class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent">${author.authorName?.charAt(0).toUpperCase() || 'A'}</div>
+                          </div>
+                        `;
+                      }
                     }}
                   />
                 </motion.div>
@@ -806,7 +880,7 @@ const EnhancedAuthorCard = ({ author, platformData, getImageUrl, openAuthorProfi
                   whileHover={{ scale: 1.1, rotate: 2 }}
                   className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-emerald-100 to-cyan-100 border-4 border-white/30 flex items-center justify-center text-xl sm:text-2xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent shadow-2xl"
                 >
-                  {author.name?.charAt(0).toUpperCase() || 'A'}
+                  {author.authorName?.charAt(0).toUpperCase() || 'A'}
                 </motion.div>
               )}
             </div>
@@ -816,27 +890,24 @@ const EnhancedAuthorCard = ({ author, platformData, getImageUrl, openAuthorProfi
         {/* Content Section */}
         <div className="p-4 sm:p-5">
           <h3 className="text-lg sm:text-xl font-bold text-emerald-900 mb-2 group-hover:text-emerald-700 transition-colors duration-300 truncate">
-            {author.name}
+            {author.authorName}
           </h3>
-          <p className="text-sm text-emerald-600/90 mb-4 line-clamp-2 leading-relaxed min-h-[3rem]">
-            {author.description || 'Featured author with amplified social presence.'}
-          </p>
-
+          
           {/* Platform Badges */}
           <div className="flex flex-wrap gap-2 mb-4">
-            {author.platforms?.slice(0, 3).map((platform, idx) => (
+            {uniquePlatforms.slice(0, 3).map((platform, idx) => (
               <motion.span
                 key={idx}
                 whileHover={{ scale: 1.1 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs ${platformData[platform]?.bg} ${platformData[platform]?.text} ${platformData[platform]?.border} border transition-all duration-300 group-hover:shadow-sm`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs ${platformData[platform]?.bg} ${platformData[platform]?.text} border transition-all duration-300 group-hover:shadow-sm`}
               >
                 <span className="text-sm">{platformData[platform]?.icon}</span>
                 <span className="font-medium">{platformData[platform]?.label}</span>
               </motion.span>
             ))}
-            {author.platforms?.length > 3 && (
+            {uniquePlatforms.length > 3 && (
               <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-100 to-cyan-100 text-emerald-700 text-xs font-medium border border-emerald-200/60">
-                +{author.platforms.length - 3}
+                +{uniquePlatforms.length - 3}
               </span>
             )}
           </div>
@@ -848,7 +919,7 @@ const EnhancedAuthorCard = ({ author, platformData, getImageUrl, openAuthorProfi
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                {author.totalLinks} profile{author.totalLinks !== 1 ? 's' : ''}
+                {author.links?.length || 0} profile{author.links?.length !== 1 ? 's' : ''}
               </div>
               <span className="text-emerald-500 group-hover:text-emerald-700 transition-colors duration-300 flex items-center gap-1 font-medium">
                 View Profile
@@ -864,16 +935,17 @@ const EnhancedAuthorCard = ({ author, platformData, getImageUrl, openAuthorProfi
   );
 };
 
-// Enhanced Author List Item
-const EnhancedAuthorListItem = ({ author, platformData, getImageUrl, openAuthorProfile, theme }) => {
-  const imageUrl = getImageUrl(author.image);
+// Author List Item Component
+const AuthorListItem = ({ author, platformData, getImageUrl, onAuthorClick, theme }) => {
+  const imageUrl = getImageUrl(author.authorImage);
+  const uniquePlatforms = [...new Set(author.links?.map(link => link.platform) || [])];
 
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       whileHover={{ x: 4 }}
-      onClick={openAuthorProfile}
+      onClick={onAuthorClick}
       className="group cursor-pointer"
     >
       <div className={`${theme.bg.card} rounded-3xl ${theme.shadow.soft} hover:${theme.shadow.card} transition-all duration-500 border ${theme.border.light} group-hover:border-emerald-300/60 backdrop-blur-sm`}>
@@ -888,16 +960,18 @@ const EnhancedAuthorListItem = ({ author, platformData, getImageUrl, openAuthorP
                 >
                   <img 
                     src={imageUrl}
-                    alt={author.name}
+                    alt={author.authorName}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       const parent = e.target.parentElement;
-                      parent.innerHTML = `
-                        <div class="w-full h-full bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center rounded-2xl">
-                          <div class="text-lg sm:text-xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent">${author.name?.charAt(0).toUpperCase() || 'A'}</div>
-                        </div>
-                      `;
+                      if (parent) {
+                        parent.innerHTML = `
+                          <div class="w-full h-full bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center rounded-2xl">
+                            <div class="text-lg sm:text-xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent">${author.authorName?.charAt(0).toUpperCase() || 'A'}</div>
+                          </div>
+                        `;
+                      }
                     }}
                   />
                 </motion.div>
@@ -906,7 +980,7 @@ const EnhancedAuthorListItem = ({ author, platformData, getImageUrl, openAuthorP
                   whileHover={{ scale: 1.1, rotate: 5 }}
                   className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-cyan-100 border-3 border-emerald-100/60 flex items-center justify-center text-lg sm:text-xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent shadow-lg"
                 >
-                  {author.name?.charAt(0).toUpperCase() || 'A'}
+                  {author.authorName?.charAt(0).toUpperCase() || 'A'}
                 </motion.div>
               )}
             </div>
@@ -916,31 +990,31 @@ const EnhancedAuthorListItem = ({ author, platformData, getImageUrl, openAuthorP
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3">
                 <div className="mb-2 sm:mb-0">
                   <h3 className="text-lg sm:text-xl font-bold text-emerald-900 mb-1 truncate">
-                    {author.name}
+                    {author.authorName}
                   </h3>
-                  <p className="text-sm text-emerald-600/90 line-clamp-1">
-                    {author.description || 'Featured author with amplified social presence.'}
-                  </p>
+                  {author.authorEmail && (
+                    <p className="text-sm text-emerald-600/80 truncate">{author.authorEmail}</p>
+                  )}
                 </div>
                 <div>
                   <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-100 to-cyan-100 text-emerald-800 text-sm font-medium border border-emerald-200/60 shadow-sm">
                     <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    {author.totalLinks} profile{author.totalLinks !== 1 ? 's' : ''}
+                    {author.links?.length || 0} profile{author.links?.length !== 1 ? 's' : ''}
                   </span>
                 </div>
               </div>
               
               <div className="flex items-center gap-3 flex-wrap">
-                {author.platforms?.slice(0, 4).map((platform, idx) => (
-                  <span key={idx} className="text-base sm:text-lg text-emerald-600">
+                {uniquePlatforms.slice(0, 5).map((platform, idx) => (
+                  <span key={idx} className="text-base sm:text-lg text-emerald-600" title={platformData[platform]?.label}>
                     {platformData[platform]?.icon}
                   </span>
                 ))}
-                {author.platforms?.length > 4 && (
-                  <span className="text-sm text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
-                    +{author.platforms.length - 4}
+                {uniquePlatforms.length > 5 && (
+                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                    +{uniquePlatforms.length - 5}
                   </span>
                 )}
               </div>
@@ -959,9 +1033,10 @@ const EnhancedAuthorListItem = ({ author, platformData, getImageUrl, openAuthorP
   );
 };
 
-// Enhanced Author Profile Modal
-const EnhancedAuthorProfileModal = ({ author, platformData, getImageUrl, onClose, theme }) => {
-  const imageUrl = getImageUrl(author.image);
+// Author Profile Modal Component
+const AuthorProfileModal = ({ author, platformData, getImageUrl, onClose, theme }) => {
+  const imageUrl = getImageUrl(author.authorImage);
+  const uniquePlatforms = [...new Set(author.links?.map(link => link.platform) || [])];
 
   return (
     <>
@@ -975,12 +1050,12 @@ const EnhancedAuthorProfileModal = ({ author, platformData, getImageUrl, onClose
       />
       
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className={`${theme.bg.modal} glass-effect rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden border ${theme.border.glow} backdrop-blur-xl`}
+          className={`${theme.bg.modal} glass-effect rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden border ${theme.border.glow} backdrop-blur-xl`}
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-cyan-500 p-5 sm:p-6">
@@ -993,27 +1068,40 @@ const EnhancedAuthorProfileModal = ({ author, platformData, getImageUrl, onClose
                   >
                     <img 
                       src={imageUrl} 
-                      alt={author.name}
+                      alt={author.authorName}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         e.target.style.display = 'none';
                         const parent = e.target.parentElement;
-                        parent.innerHTML = `
-                          <div class="w-full h-full bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center">
-                            <div class="text-lg sm:text-xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent">${author.name?.charAt(0).toUpperCase() || 'A'}</div>
-                          </div>
-                        `;
+                        if (parent) {
+                          parent.innerHTML = `
+                            <div class="w-full h-full bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center">
+                              <div class="text-lg sm:text-xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent">${author.authorName?.charAt(0).toUpperCase() || 'A'}</div>
+                            </div>
+                          `;
+                        }
                       }}
                     />
                   </motion.div>
                 ) : (
                   <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-cyan-100 border-4 border-white/30 flex items-center justify-center text-lg sm:text-xl font-bold bg-gradient-to-r from-emerald-700 to-cyan-600 bg-clip-text text-transparent shadow-xl">
-                    {author.name?.charAt(0).toUpperCase() || 'A'}
+                    {author.authorName?.charAt(0).toUpperCase() || 'A'}
                   </div>
                 )}
                 <div>
-                  <h3 className="text-xl sm:text-2xl font-bold text-white">{author.name}</h3>
-                  <p className="text-emerald-100/90 text-sm">Author Profile</p>
+                  <h3 className="text-xl sm:text-2xl font-bold text-white">{author.authorName}</h3>
+                  {author.authorEmail && (
+                    <p className="text-emerald-100/90 text-sm">{author.authorEmail}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-emerald-100/80">
+                      {author.links?.length || 0} social profile{author.links?.length !== 1 ? 's' : ''}
+                    </span>
+                    <span className="text-xs text-emerald-100/80">•</span>
+                    <span className="text-xs text-emerald-100/80">
+                      {uniquePlatforms.length} platform{uniquePlatforms.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
                 </div>
               </div>
               <button
@@ -1029,72 +1117,74 @@ const EnhancedAuthorProfileModal = ({ author, platformData, getImageUrl, onClose
           
           {/* Content */}
           <div className="p-5 sm:p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-            {/* Author Bio */}
+            {/* Social Links - Grouped by Platform for better organization */}
             <div className="mb-6">
-              <h4 className="text-lg font-semibold text-emerald-900 mb-3 flex items-center gap-2">
-                <span className="text-emerald-500">📖</span>
-                About
-              </h4>
-              <div className="bg-gradient-to-br from-emerald-50/80 to-cyan-50/80 rounded-2xl p-4 sm:p-5 border border-emerald-100/60">
-                <p className="text-sm text-emerald-700 leading-relaxed">
-                  {author.description || 'Featured author with amplified social presence.'}
-                </p>
-              </div>
-            </div>
-
-            {/* Social Links */}
-            <div className="mb-6">
-              <h4 className="text-lg font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+              <h4 className="text-lg font-semibold text-emerald-900 mb-4 flex items-center gap-2">
                 <span className="text-emerald-500">🔗</span>
                 Social Profiles
+                <span className="text-xs text-emerald-500 font-normal ml-2">
+                  ({author.links?.length || 0} total)
+                </span>
               </h4>
-              <div className="space-y-3">
-                {author.links?.slice(0, 6).map((link, index) => (
-                  <motion.a
-                    key={index}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    whileHover={{ x: 4 }}
-                    className={`group flex items-center justify-between p-4 rounded-2xl border ${platformData[link.platform]?.border} ${platformData[link.platform]?.bg} hover:shadow-lg transition-all duration-300`}
-                  >
-                    <div className="flex items-center">
-                      <span className="text-2xl mr-3">{platformData[link.platform]?.icon}</span>
-                      <div>
-                        <div className="font-bold text-emerald-900">
-                          {platformData[link.platform]?.label}
+              
+              {author.links?.length === 0 ? (
+                <div className="text-center py-8 bg-gradient-to-br from-emerald-50/80 to-cyan-50/80 rounded-2xl border border-emerald-100/60">
+                  <p className="text-emerald-600">No social profiles added yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {author.links.map((link, index) => (
+                    <motion.a
+                      key={link.id || index}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      whileHover={{ x: 4 }}
+                      className={`group flex items-center justify-between p-4 rounded-2xl border ${platformData[link.platform]?.border} ${platformData[link.platform]?.bg} hover:shadow-lg transition-all duration-300`}
+                    >
+                      <div className="flex items-center">
+                        <span className="text-2xl mr-3">{platformData[link.platform]?.icon}</span>
+                        <div>
+                          <div className="font-bold text-emerald-900">
+                            {link.customLabel || platformData[link.platform]?.label}
+                          </div>
+                          {link.username && (
+                            <div className="text-sm text-emerald-600">@{link.username}</div>
+                          )}
+                          {link.description && (
+                            <div className="text-xs text-emerald-500 mt-1">{link.description}</div>
+                          )}
                         </div>
-                        {link.username && (
-                          <div className="text-sm text-emerald-600">@{link.username}</div>
-                        )}
                       </div>
-                    </div>
-                    <svg className="w-5 h-5 text-emerald-400 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </motion.a>
-                ))}
-              </div>
+                      <svg className="w-5 h-5 text-emerald-400 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      </svg>
+                    </motion.a>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Author Stats */}
             <div className="bg-gradient-to-br from-emerald-50/80 to-cyan-50/80 rounded-2xl p-4 sm:p-5 border border-emerald-100/60">
               <h5 className="text-lg font-semibold text-emerald-900 mb-4 flex items-center gap-2">
                 <span className="text-emerald-500">📊</span>
-                Profile Stats
+                Profile Statistics
               </h5>
               <div className="grid grid-cols-3 gap-4">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-emerald-700">{author.totalLinks}</div>
-                  <div className="text-sm text-emerald-600">Profiles</div>
+                  <div className="text-2xl font-bold text-emerald-700">{author.links?.length || 0}</div>
+                  <div className="text-sm text-emerald-600">Total Profiles</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-emerald-700">{author.platforms?.length || 0}</div>
-                  <div className="text-sm text-emerald-600">Platforms</div>
+                  <div className="text-2xl font-bold text-emerald-700">{uniquePlatforms.length}</div>
+                  <div className="text-sm text-emerald-600">Unique Platforms</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-emerald-700">Active</div>
-                  <div className="text-sm text-emerald-600">Status</div>
+                  <div className="text-2xl font-bold text-emerald-700">
+                    {author.links?.filter(l => l.isActive !== false).length || 0}
+                  </div>
+                  <div className="text-sm text-emerald-600">Active Profiles</div>
                 </div>
               </div>
             </div>
@@ -1107,16 +1197,14 @@ const EnhancedAuthorProfileModal = ({ author, platformData, getImageUrl, onClose
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Updated just now
+                Connect with {author.authorName} on their social platforms
               </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2.5 bg-white text-emerald-700 font-medium rounded-xl border border-emerald-200/80 hover:bg-emerald-50 hover:shadow-md transition-all duration-300 mobile-full"
-                >
-                  Close
-                </button>
-              </div>
+              <button
+                onClick={onClose}
+                className="px-4 py-2.5 bg-white text-emerald-700 font-medium rounded-xl border border-emerald-200/80 hover:bg-emerald-50 hover:shadow-md transition-all duration-300 mobile-full"
+              >
+                Close
+              </button>
             </div>
           </div>
         </motion.div>

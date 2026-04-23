@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.68.4:3000/api';
+const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL ? 
+  import.meta.env.VITE_API_BASE_URL.replace('/api', '') : 
+  'http://192.168.68.4:3000';
 
 const BookstoreDetail = () => {
   const { id } = useParams();
@@ -16,6 +19,7 @@ const BookstoreDetail = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoadingBooks, setIsLoadingBooks] = useState(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [modalError, setModalError] = useState(null);
 
   // Compact theme palette
   const theme = {
@@ -43,6 +47,17 @@ const BookstoreDetail = () => {
     }
   };
 
+  // Category colors for badges
+  const categoryColors = {
+    'Independent': 'from-emerald-500 to-green-600',
+    'Chain': 'from-green-500 to-emerald-600',
+    'Specialty': 'from-lime-400 to-green-500',
+    'Online': 'from-emerald-400 to-cyan-500',
+    'Academic': 'from-green-400 to-teal-500',
+    'Used': 'from-amber-400 to-yellow-500',
+    'Default': 'from-emerald-400 to-green-500'
+  };
+
   // Scroll to top
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -66,6 +81,75 @@ const BookstoreDetail = () => {
     fetchBookstore();
   }, [id]);
 
+  // Enhanced getImageUrl function for Base64 and all storage formats
+const getImageUrl = (imageData) => {
+  if (!imageData) return null;
+  
+  // Handle null or undefined
+  if (!imageData) return null;
+  
+  // If it's already a Base64 string
+  if (typeof imageData === 'string' && imageData.startsWith('data:image')) {
+    return imageData;
+  }
+  
+  // Handle JSON string array (our storage format) - MOST IMPORTANT
+  if (typeof imageData === 'string' && imageData.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(imageData);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const firstImage = parsed[0];
+        if (firstImage && typeof firstImage === 'string' && firstImage.startsWith('data:image')) {
+          return firstImage;
+        }
+        return firstImage;
+      }
+    } catch (e) {
+      console.warn('Error parsing array image data:', e);
+      // If parsing fails, return the original
+      return imageData;
+    }
+  }
+  
+  // Handle JSON object (legacy/alternative format)
+  if (typeof imageData === 'string' && imageData.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(imageData);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].startsWith('data:image')) {
+        return parsed[0];
+      }
+      if (typeof parsed === 'string' && parsed.startsWith('data:image')) {
+        return parsed;
+      }
+      return parsed;
+    } catch (e) {
+      // Not JSON, continue
+    }
+  }
+  
+  // Handle full URLs
+  if (typeof imageData === 'string' && (imageData.startsWith('http://') || imageData.startsWith('https://'))) {
+    return imageData;
+  }
+  
+  // Handle paths
+  if (typeof imageData === 'string' && imageData.startsWith('/')) {
+    return `${IMAGE_BASE_URL}${imageData}`;
+  }
+  
+  // If it's an array directly (unlikely but possible)
+  if (Array.isArray(imageData) && imageData.length > 0) {
+    const firstImage = imageData[0];
+    if (typeof firstImage === 'string' && firstImage.startsWith('data:image')) {
+      return firstImage;
+    }
+    return firstImage;
+  }
+  
+  // Return as is (fallback)
+  return imageData;
+};
+
   const fetchBookstore = async () => {
     try {
       setLoading(true);
@@ -82,7 +166,14 @@ const BookstoreDetail = () => {
       }
       
       const data = await response.json();
-      setBookstore(data.success ? data.data : data);
+      const bookstoreData = data.success ? data.data : data;
+      
+      // Process image if needed (already Base64)
+      if (bookstoreData.image_url) {
+        bookstoreData.image_url = getImageUrl(bookstoreData.image_url);
+      }
+      
+      setBookstore(bookstoreData);
     } catch (error) {
       console.error('Error fetching bookstore:', error);
       setError(error.message);
@@ -92,42 +183,135 @@ const BookstoreDetail = () => {
   };
 
   const fetchAuthorBooks = async (authorId) => {
-    try {
-      setIsLoadingBooks(true);
-      const response = await fetch(`${API_BASE_URL}/authors/${authorId}/books`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch author's books. Status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      let books = [];
-      
-      if (data.success) {
-        if (data.data && data.data.books) {
-          books = data.data.books;
-        } else if (data.data && Array.isArray(data.data)) {
-          books = data.data;
-        } else if (data.books) {
-          books = data.books;
-        }
-      }
-      setAuthorBooks(books);
-    } catch (error) {
-      console.error('Error fetching author books:', error);
-      setAuthorBooks([]);
-    } finally {
-      setIsLoadingBooks(false);
+  try {
+    setIsLoadingBooks(true);
+    console.log('Fetching books for author ID:', authorId);
+    
+    const response = await fetch(`${API_BASE_URL}/authors/${authorId}/books`, {
+      credentials: 'include'
+    });
+    
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch author's books. Status: ${response.status}`);
     }
-  };
+    
+    const data = await response.json();
+    console.log('Raw response data:', data);
+    
+    let books = [];
+    
+    // Handle different response structures
+    if (data.success) {
+      // Case 1: data.data.books (like your backend returns)
+      if (data.data && data.data.books) {
+        books = data.data.books;
+      }
+      // Case 2: data.data is an array
+      else if (data.data && Array.isArray(data.data)) {
+        books = data.data;
+      }
+      // Case 3: data.books is an array
+      else if (data.books && Array.isArray(data.books)) {
+        books = data.books;
+      }
+      // Case 4: data.data has books array directly
+      else if (data.data && data.data.books && Array.isArray(data.data.books)) {
+        books = data.data.books;
+      }
+    } else if (Array.isArray(data)) {
+      books = data;
+    }
+    
+    console.log('Processed books:', books);
+    
+    // Process book images
+    const processedBooks = books.map(book => {
+      const processedImage = book.image_url ? getImageUrl(book.image_url) : null;
+      return {
+        ...book,
+        image_url: processedImage,
+        cover_image: book.cover_image ? getImageUrl(book.cover_image) : null
+      };
+    });
+    
+    setAuthorBooks(processedBooks);
+    
+    if (processedBooks.length === 0) {
+      console.log('No books found for this author');
+    }
+  } catch (error) {
+    console.error('Error fetching author books:', error);
+    setAuthorBooks([]);
+    // Show error in modal
+    setError(`Failed to load books: ${error.message}`);
+  } finally {
+    setIsLoadingBooks(false);
+  }
+};
+
+  // Helper function to render author avatar (handles Base64 images and emojis)
+const renderAuthorAvatar = (avatar, name) => {
+  // Handle null/undefined
+  if (!avatar) {
+    return <span className="text-emerald-800 font-bold">{name?.charAt(0) || '👤'}</span>;
+  }
+  
+  let avatarUrl = null;
+  let displayText = name?.charAt(0) || '👤';
+  
+  // Check if it's a JSON string array (from database)
+  if (typeof avatar === 'string' && avatar.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(avatar);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].startsWith('data:image')) {
+        avatarUrl = parsed[0];
+      }
+    } catch (e) {
+      // Fall through to text
+    }
+  }
+  // Check if it's a direct Base64 image
+  else if (typeof avatar === 'string' && avatar.startsWith('data:image')) {
+    avatarUrl = avatar;
+  }
+  // Check if it's an emoji or text
+  else if (typeof avatar === 'string' && !avatar.startsWith('data:image')) {
+    displayText = avatar;
+  }
+  
+  // Return image if we have a valid URL
+  if (avatarUrl) {
+    return (
+      <img 
+        src={avatarUrl} 
+        alt={name}
+        className="w-full h-full object-cover"
+        onError={(e) => {
+          // Fallback to text on error
+          e.target.style.display = 'none';
+          const parent = e.target.parentElement;
+          if (parent) {
+            parent.innerHTML = `<span class="text-emerald-800 font-bold">${name?.charAt(0) || '👤'}</span>`;
+          }
+        }}
+      />
+    );
+  }
+  
+  // Return text/emoji
+  return <span className="text-emerald-800 font-bold">{displayText}</span>;
+};
 
   const handleViewAuthorBooks = async (author) => {
-    setSelectedAuthor(author);
-    setIsModalOpen(true);
-    await fetchAuthorBooks(author.id);
-  };
+  console.log('Selected author:', author);
+  setSelectedAuthor(author);
+  setIsModalOpen(true);
+  // Clear previous books first
+  setAuthorBooks([]);
+  await fetchAuthorBooks(author.id);
+};
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -218,18 +402,20 @@ const BookstoreDetail = () => {
               {bookstore.image_url ? (
                 <div className="relative w-full h-full flex items-center justify-center p-4">
                   <img 
-                    src={bookstore.image_url?.startsWith('http') ? bookstore.image_url : `https://api.fulfill1st.com${bookstore.image_url}`}
+                    src={bookstore.image_url}
                     alt={bookstore.name}
                     className="max-w-full max-h-full object-contain border border-emerald-200 rounded"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       const parent = e.target.parentElement;
-                      parent.innerHTML = `
-                        <div class="flex flex-col items-center justify-center">
-                          <div class="text-4xl mb-2 text-emerald-600">${bookstore.logo || '📚'}</div>
-                          <div class="text-lg font-bold text-emerald-900">${bookstore.name}</div>
-                        </div>
-                      `;
+                      if (parent) {
+                        parent.innerHTML = `
+                          <div class="flex flex-col items-center justify-center">
+                            <div class="text-4xl mb-2 text-emerald-600">${bookstore.logo || '📚'}</div>
+                            <div class="text-lg font-bold text-emerald-900">${bookstore.name}</div>
+                          </div>
+                        `;
+                      }
                     }}
                   />
                 </div>
@@ -240,23 +426,31 @@ const BookstoreDetail = () => {
                 </div>
               )}
               
-              {/* Rating Badge */}
-              <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow border border-emerald-200">
-                <div className="flex items-center space-x-1">
-                  <span className="text-xs text-yellow-400">★</span>
-                  <span className="text-sm text-emerald-900 font-medium">
-                    {bookstore.rating || 5.0}
-                  </span>
-                </div>
+              {/* Category Badge */}
+              <div className="absolute top-3 left-3">
+                <span className={`px-3 py-1 bg-gradient-to-r ${categoryColors[bookstore.category] || categoryColors.Default} text-white text-xs font-bold rounded shadow-sm`}>
+                  {bookstore.category || 'Independent'}
+                </span>
               </div>
+              
+              {/* Rating Badge */}
+              {(bookstore.rating || bookstore.rating === 0) && (
+                <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow border border-emerald-200">
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs text-yellow-400">★</span>
+                    <span className="text-sm text-emerald-900 font-medium">
+                      {typeof bookstore.rating === 'number' 
+                        ? bookstore.rating.toFixed(1) 
+                        : parseFloat(bookstore.rating || 0).toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Bookstore Info Section */}
             <div className="p-4">
               <div className="mb-4">
-                <div className="inline-block px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-medium mb-3 border border-emerald-200">
-                  {bookstore.category || 'Independent'}
-                </div>
                 <h2 className="text-lg font-bold text-emerald-900 mb-2">{bookstore.name}</h2>
                 <p className="text-sm text-emerald-800 mb-4 leading-relaxed">{bookstore.description || 'No description available.'}</p>
               </div>
@@ -270,8 +464,22 @@ const BookstoreDetail = () => {
                       </svg>
                     </div>
                     <div className="ml-2">
-                      <div className="text-xs text-emerald-700">Location</div>
+                      <div className="text-xs text-emerald-700">Address</div>
                       <div className="text-sm text-emerald-900 font-medium truncate">{bookstore.address}</div>
+                    </div>
+                  </div>
+                )}
+                
+                {bookstore.location && (
+                  <div className="flex items-start p-3 bg-emerald-50 rounded-lg border border-emerald-100">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                      </svg>
+                    </div>
+                    <div className="ml-2">
+                      <div className="text-xs text-emerald-700">Location</div>
+                      <div className="text-sm text-emerald-900 font-medium truncate">{bookstore.location}</div>
                     </div>
                   </div>
                 )}
@@ -330,11 +538,11 @@ const BookstoreDetail = () => {
                 <h3 className="text-sm font-semibold text-emerald-900 mb-3">Store Stats</h3>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="text-center p-2 bg-white rounded border border-emerald-100">
-                    <div className="text-sm font-bold text-emerald-700">{bookstore.totalBooks || 0}</div>
+                    <div className="text-sm font-bold text-emerald-700">{bookstore.books?.length || 0}</div>
                     <div className="text-xs text-emerald-600">Books</div>
                   </div>
                   <div className="text-center p-2 bg-white rounded border border-emerald-100">
-                    <div className="text-sm font-bold text-emerald-700">{bookstore.featuredAuthors || 0}</div>
+                    <div className="text-sm font-bold text-emerald-700">{bookstore.authors?.length || 0}</div>
                     <div className="text-xs text-emerald-600">Authors</div>
                   </div>
                   <div className="text-center p-2 bg-white rounded border border-emerald-100">
@@ -365,8 +573,8 @@ const BookstoreDetail = () => {
                   <div key={author.id} className={`${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 border ${theme.border.light} overflow-hidden hover:border-emerald-300 group`}>
                     <div className="p-3">
                       <div className="flex items-center mb-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-100 to-green-100 rounded-full flex items-center justify-center text-sm mr-3 text-emerald-800 font-bold">
-                          {author.avatar || author.name?.charAt(0) || '👤'}
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm mr-3 overflow-hidden bg-gradient-to-br from-emerald-100 to-green-100">
+                          {renderAuthorAvatar(author.avatar, author.name)}
                         </div>
                         <div className="min-w-0 flex-1">
                           <h3 className="text-sm font-semibold text-emerald-900 truncate group-hover:text-emerald-700">{author.name}</h3>
@@ -419,15 +627,18 @@ const BookstoreDetail = () => {
       )}
 
       {/* Author Books Modal */}
+      {/* Author Books Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[9999] overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen pt-4 px-3 pb-20 text-center">
+            {/* Backdrop - make sure it doesn't cover the modal content by using pointer-events-auto but proper layering */}
             <div 
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity z-0"
               onClick={closeModal}
             ></div>
             
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-2xl transform transition-all w-full max-w-4xl">
+            {/* Modal Container - higher z-index than backdrop */}
+            <div className="relative z-10 inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-2xl transform transition-all w-full max-w-4xl">
               {/* Modal Header */}
               <div className="bg-gradient-to-r from-emerald-600 to-green-600 px-4 py-3">
                 <div className="flex items-center justify-between">
@@ -453,58 +664,78 @@ const BookstoreDetail = () => {
                     <div className="inline-block animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-emerald-600 mb-2"></div>
                     <p className="text-sm text-emerald-700">Loading books...</p>
                   </div>
+                ) : modalError ? (
+                  <div className="text-center py-6">
+                    <div className="text-4xl mb-2 text-red-400">⚠️</div>
+                    <h4 className="text-sm font-semibold text-emerald-800 mb-1">Error Loading Books</h4>
+                    <p className="text-xs text-emerald-600">{modalError}</p>
+                    <button
+                      onClick={() => {
+                        setModalError(null);
+                        fetchAuthorBooks(selectedAuthor?.id);
+                      }}
+                      className="mt-3 text-xs text-emerald-600 hover:text-emerald-800 underline"
+                    >
+                      Try Again
+                    </button>
+                  </div>
                 ) : authorBooks.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {authorBooks.map((book) => {
-                      const bookImageUrl = book.image_url 
-                            ? book.image_url.startsWith('http') 
-                              ? book.image_url 
-                              : `https://api.fulfill1st.com${book.image_url}`
-                            : null;
-                      
-                      return (
-                        <div key={book.id} className="bg-white border border-emerald-100 rounded overflow-hidden hover:shadow transition-all hover:border-emerald-300">
-                          {/* Book Image */}
-                          <div className="h-32 bg-emerald-50 flex items-center justify-center">
-                            {bookImageUrl ? (
-                              <img 
-                                src={bookImageUrl}
-                                alt={book.title}
-                                className="max-w-full max-h-full object-contain p-2"
-                              />
-                            ) : (
-                              <div className="text-3xl text-emerald-400">📖</div>
+                    {authorBooks.map((book) => (
+                      <div key={book.id} className="bg-white border border-emerald-100 rounded overflow-hidden hover:shadow transition-all hover:border-emerald-300">
+                        {/* Book Image */}
+                        {/* Book Image */}
+                        <div className="h-32 bg-emerald-50 flex items-center justify-center">
+                          {(() => {
+                            const imageUrl = getImageUrl(book.image_url);
+                            if (imageUrl && (imageUrl.startsWith('data:image') || imageUrl.startsWith('http'))) {
+                              return (
+                                <img 
+                                  src={imageUrl}
+                                  alt={book.title}
+                                  className="max-w-full max-h-full object-contain p-2"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    const parent = e.target.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML = '<div class="text-3xl text-emerald-400">📖</div>';
+                                    }
+                                  }}
+                                />
+                              );
+                            } else {
+                              return <div className="text-3xl text-emerald-400">📖</div>;
+                            }
+                          })()}
+                        </div>
+                        
+                        {/* Book Info */}
+                        <div className="p-3">
+                          <h4 className="text-sm font-semibold text-emerald-900 mb-1 truncate">{book.title}</h4>
+                          <p className="text-xs text-emerald-800 mb-2 line-clamp-2 h-8">{book.description || 'No description available.'}</p>
+                          
+                          <div className="space-y-1 text-xs">
+                            {book.published_date && (
+                              <div className="flex items-center text-emerald-600">
+                                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                {new Date(book.published_date).toLocaleDateString()}
+                              </div>
+                            )}
+                            
+                            {book.price && (
+                              <div className="flex items-center text-emerald-700 font-medium">
+                                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                ${parseFloat(book.price).toFixed(2)}
+                              </div>
                             )}
                           </div>
-                          
-                          {/* Book Info */}
-                          <div className="p-3">
-                            <h4 className="text-sm font-semibold text-emerald-900 mb-1 truncate">{book.title}</h4>
-                            <p className="text-xs text-emerald-800 mb-2 line-clamp-2 h-8">{book.description}</p>
-                            
-                            <div className="space-y-1 text-xs">
-                              {book.published_date && (
-                                <div className="flex items-center text-emerald-600">
-                                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                  </svg>
-                                  {new Date(book.published_date).toLocaleDateString()}
-                                </div>
-                              )}
-                              
-                              {book.price && (
-                                <div className="flex items-center text-emerald-700 font-medium">
-                                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  ${parseFloat(book.price).toFixed(2)}
-                                </div>
-                              )}
-                            </div>
-                          </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div className="text-center py-6">

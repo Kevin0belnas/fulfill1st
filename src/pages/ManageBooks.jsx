@@ -1,8 +1,8 @@
 // pages/ManageBooks.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.68.4:3000/api';
 
 const ManageBooks = () => {
   const navigate = useNavigate();
@@ -11,10 +11,10 @@ const ManageBooks = () => {
   const [bookstores, setBookstores] = useState([]);
   const [authors, setAuthors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingAuthors, setLoadingAuthors] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [formData, setFormData] = useState({
     bookstore_id: '',
@@ -27,8 +27,8 @@ const ManageBooks = () => {
     description: '',
     image_url: ''
   });
-  const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   // Scroll to top on route change
   useEffect(() => {
@@ -49,6 +49,11 @@ const ManageBooks = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
+
   useEffect(() => {
     fetchBooks();
     fetchBookstores();
@@ -62,6 +67,13 @@ const ManageBooks = () => {
       setAuthors([]);
     }
   }, [formData.bookstore_id]);
+
+  // Load authors when bookstore_id changes in edit mode
+  useEffect(() => {
+    if (formData.bookstore_id && showEditModal) {
+      fetchAuthors(formData.bookstore_id);
+    }
+  }, [formData.bookstore_id, showEditModal]);
 
   const fetchBooks = async () => {
     try {
@@ -78,6 +90,7 @@ const ManageBooks = () => {
       }
     } catch (error) {
       console.error('Error fetching books:', error);
+      showToast('Failed to load books', 'error');
     } finally {
       setLoading(false);
     }
@@ -102,6 +115,7 @@ const ManageBooks = () => {
 
   const fetchAuthors = async (bookstoreId) => {
     try {
+      setLoadingAuthors(true);
       const response = await fetch(`${API_BASE_URL}/authors/bookstore/${bookstoreId}`, {
         credentials: 'include'
       });
@@ -109,12 +123,74 @@ const ManageBooks = () => {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setAuthors(data.data || []);
+          // Parse author avatars
+          const parsedAuthors = (data.data || []).map(author => {
+            let avatar = author.avatar;
+            if (typeof avatar === 'string' && avatar.startsWith('[')) {
+              try {
+                const parsed = JSON.parse(avatar);
+                if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].startsWith('data:image')) {
+                  avatar = parsed[0];
+                }
+              } catch (e) {}
+            }
+            return { ...author, avatar };
+          });
+          setAuthors(parsedAuthors);
+          return parsedAuthors;
         }
       }
+      return [];
     } catch (error) {
       console.error('Error fetching authors:', error);
+      return [];
+    } finally {
+      setLoadingAuthors(false);
     }
+  };
+
+  // Compress image for Base64
+  const compressImage = (file, maxWidth = 300, maxHeight = 400, quality = 0.7) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > maxWidth) {
+              height = (height * maxWidth) / width;
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = (width * maxHeight) / height;
+              height = maxHeight;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((blob) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+              resolve(reader.result);
+            };
+          }, 'image/jpeg', quality);
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
   };
 
   const handleChange = (e) => {
@@ -125,96 +201,57 @@ const ManageBooks = () => {
     }));
   };
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validate file type
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
       if (!validTypes.includes(file.type)) {
-        alert('Please select a valid image file (JPEG, PNG, GIF, WebP)');
+        showToast('Please select a valid image file (JPEG, PNG, GIF, WebP)', 'error');
         e.target.value = '';
         return;
       }
 
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
+        showToast('Image size should be less than 5MB', 'error');
         e.target.value = '';
         return;
       }
 
-      setImageFile(file);
-      
-      // Create preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressedBase64 = await compressImage(file, 300, 400, 0.7);
+        setFormData(prev => ({ ...prev, image_url: compressedBase64 }));
+        setImagePreview(compressedBase64);
+        showToast('Image processed successfully', 'success');
+      } catch (error) {
+        console.error('Error processing image:', error);
+        showToast('Failed to process image', 'error');
+      }
     }
   };
 
-  const uploadBookImage = async () => {
-    if (!imageFile) return null;
-
-    try {
-      setUploadingImage(true);
-      const formData = new FormData();
-      formData.append('image', imageFile);
-
-      const response = await fetch(`${API_BASE_URL}/books/upload-image`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        return data.data.imageUrl;
-      } else {
-        alert(`Error uploading image: ${data.error}`);
-        return null;
-      }
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      alert('Failed to upload image. Please try again.');
-      return null;
-    } finally {
-      setUploadingImage(false);
-    }
+  const handleRemoveImage = () => {
+    setFormData(prev => ({ ...prev, image_url: '' }));
+    setImagePreview(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.bookstore_id) {
-      alert('Please select a bookstore');
+      showToast('Please select a bookstore', 'error');
       return;
     }
     
     if (!formData.author_id) {
-      alert('Please select an author');
+      showToast('Please select an author', 'error');
       return;
     }
     
     setLoading(true);
 
     try {
-      let imageUrl = formData.image_url;
-      
-      // Upload new image if selected
-      if (imageFile) {
-        const uploadedImageUrl = await uploadBookImage();
-        if (uploadedImageUrl) {
-          imageUrl = uploadedImageUrl;
-        }
-      }
-
-      // Format the date for backend
       let formattedDate = formData.published_date;
       if (formattedDate) {
-        // Convert YYYY-MM-DD to ISO string for MySQL
         formattedDate = new Date(formattedDate).toISOString().split('T')[0];
       } else {
         formattedDate = null;
@@ -229,36 +266,33 @@ const ManageBooks = () => {
         body: JSON.stringify({
           ...formData,
           price: parseFloat(formData.price) || 0,
-          published_date: formattedDate,
-          image_url: imageUrl
+          published_date: formattedDate
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert('Book added successfully!');
+        showToast('Book added successfully!', 'success');
         setShowAddModal(false);
         resetForm();
         fetchBooks();
       } else {
-        alert(`Error: ${data.error}`);
+        showToast(`Error: ${data.error}`, 'error');
       }
     } catch (error) {
       console.error('Error adding book:', error);
-      alert('Failed to add book. Please try again.');
+      showToast('Failed to add book. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEdit = (book) => {
+  const handleEdit = async (book) => {
     setSelectedBook(book);
     
-    // Format the date for the input field
     let formattedDate = '';
     if (book.published_date) {
-      // Convert database date to YYYY-MM-DD format for date input
       const date = new Date(book.published_date);
       if (!isNaN(date.getTime())) {
         formattedDate = date.toISOString().split('T')[0];
@@ -277,18 +311,12 @@ const ManageBooks = () => {
       image_url: book.image_url || ''
     });
     
-    // Set image preview if book has an image
-    if (book.image_url) {
-      // Ensure image URL is absolute
-      const fullImageUrl = book.image_url.startsWith('http') 
-        ? book.image_url 
-        : `${API_BASE_URL.replace('/api', '')}${book.image_url}`;
-      setImagePreview(fullImageUrl);
-    } else {
-      setImagePreview(null);
+    setImagePreview(book.image_url || null);
+    
+    if (book.bookstore_id) {
+      await fetchAuthors(book.bookstore_id);
     }
     
-    setImageFile(null);
     setShowEditModal(true);
   };
 
@@ -296,29 +324,18 @@ const ManageBooks = () => {
     e.preventDefault();
     
     if (!formData.bookstore_id) {
-      alert('Please select a bookstore');
+      showToast('Please select a bookstore', 'error');
       return;
     }
     
     if (!formData.author_id) {
-      alert('Please select an author');
+      showToast('Please select an author', 'error');
       return;
     }
     
     setLoading(true);
 
     try {
-      let imageUrl = formData.image_url;
-      
-      // Upload new image if selected
-      if (imageFile) {
-        const uploadedImageUrl = await uploadBookImage();
-        if (uploadedImageUrl) {
-          imageUrl = uploadedImageUrl;
-        }
-      }
-
-      // Format the date for backend
       let formattedDate = formData.published_date;
       if (formattedDate) {
         formattedDate = new Date(formattedDate).toISOString().split('T')[0];
@@ -335,31 +352,30 @@ const ManageBooks = () => {
         body: JSON.stringify({
           ...formData,
           price: parseFloat(formData.price) || 0,
-          published_date: formattedDate,
-          image_url: imageUrl
+          published_date: formattedDate
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert('Book updated successfully!');
+        showToast('Book updated successfully!', 'success');
         setShowEditModal(false);
         resetForm();
         fetchBooks();
       } else {
-        alert(`Error: ${data.error}`);
+        showToast(`Error: ${data.error}`, 'error');
       }
     } catch (error) {
       console.error('Error updating book:', error);
-      alert('Failed to update book. Please try again.');
+      showToast('Failed to update book. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (bookId) => {
-    if (!window.confirm('Are you sure you want to delete this book?')) {
+  const handleDelete = async (bookId, bookTitle) => {
+    if (!window.confirm(`Are you sure you want to delete "${bookTitle}"?`)) {
       return;
     }
 
@@ -372,14 +388,14 @@ const ManageBooks = () => {
       const data = await response.json();
 
       if (data.success) {
-        alert('Book deleted successfully!');
+        showToast('Book deleted successfully!', 'success');
         fetchBooks();
       } else {
-        alert(`Error: ${data.error}`);
+        showToast(`Error: ${data.error}`, 'error');
       }
     } catch (error) {
       console.error('Error deleting book:', error);
-      alert('Failed to delete book. Please try again.');
+      showToast('Failed to delete book. Please try again.', 'error');
     }
   };
 
@@ -395,13 +411,35 @@ const ManageBooks = () => {
       description: '',
       image_url: ''
     });
-    setImageFile(null);
     setImagePreview(null);
     setSelectedBook(null);
   };
 
   const selectedBookstore = bookstores.find(b => b.id == formData.bookstore_id);
-  const selectedAuthor = authors.find(a => a.id == formData.author_id);
+  
+  const selectedAuthor = (() => {
+    const found = authors.find(a => a.id == formData.author_id);
+    if (found) return found;
+    
+    if (selectedBook && selectedBook.author_id == formData.author_id) {
+      let avatar = selectedBook.author_avatar;
+      if (typeof avatar === 'string' && avatar.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(avatar);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            avatar = parsed[0];
+          }
+        } catch (e) {}
+      }
+      return {
+        id: selectedBook.author_id,
+        name: selectedBook.author_name,
+        genre: selectedBook.author_genre,
+        avatar: avatar
+      };
+    }
+    return null;
+  })();
 
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-US', {
@@ -410,29 +448,6 @@ const ManageBooks = () => {
     }).format(price);
   };
 
-  const handleRemoveImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
-    setFormData(prev => ({
-      ...prev,
-      image_url: ''
-    }));
-  };
-
-  // Helper function to get full image URL
-  const getFullImageUrl = (url) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('data:')) {
-      return url;
-    }
-    // Ensure the URL has the correct base path
-    if (url.startsWith('/uploads/')) {
-      return `${API_BASE_URL.replace('/api', '')}${url}`;
-    }
-    return url;
-  };
-
-  // Format date for display
   const formatDisplayDate = (dateString) => {
     if (!dateString) return 'No date';
     const date = new Date(dateString);
@@ -458,14 +473,19 @@ const ManageBooks = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50">
+      {toast.show && (
+        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-xl ${
+          toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="max-w-screen mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-emerald-900 mb-2">Manage Books</h1>
-            <p className="text-emerald-700">
-              View and manage all books across authors and bookstores
-            </p>
+            <p className="text-emerald-700">View and manage all books across authors and bookstores</p>
           </div>
           <button
             onClick={() => setShowAddModal(true)}
@@ -478,7 +498,6 @@ const ManageBooks = () => {
           </button>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-6 border border-emerald-100">
             <div className="flex items-center">
@@ -516,14 +535,13 @@ const ManageBooks = () => {
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-emerald-600">Active Authors</p>
+                <p className="text-sm text-emerald-600">Available Authors</p>
                 <p className="text-2xl font-bold text-emerald-900">{authors.length}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Books Table */}
         <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-emerald-100">
           <div className="px-6 py-4 bg-gradient-to-r from-emerald-50 to-green-50 border-b border-emerald-100">
             <div className="flex items-center">
@@ -537,24 +555,12 @@ const ManageBooks = () => {
             <table className="min-w-full divide-y divide-emerald-100">
               <thead className="bg-emerald-50">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                    Book Details
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                    Author
-                  </th>
-                  <th className="px 6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                    Bookstore
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                    Published
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                    Price
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">Book Details</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">Author</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">Bookstore</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">Published</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">Price</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-emerald-100">
@@ -568,10 +574,7 @@ const ManageBooks = () => {
                       </div>
                       <p className="text-emerald-600 font-medium mb-2">No books found</p>
                       <p className="text-emerald-500 text-sm mb-4">Add your first book to get started</p>
-                      <button
-                        onClick={() => setShowAddModal(true)}
-                        className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg hover:from-emerald-600 hover:to-green-700 transition duration-200 text-sm"
-                      >
+                      <button onClick={() => setShowAddModal(true)} className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg hover:from-emerald-600 hover:to-green-700 transition duration-200 text-sm">
                         Add Your First Book
                       </button>
                     </td>
@@ -582,16 +585,8 @@ const ManageBooks = () => {
                       <td className="px-6 py-5">
                         <div className="flex items-start space-x-4">
                           <div className="flex-shrink-0">
-                            {book.image_url ? (
-                              <img 
-                                src={getFullImageUrl(book.image_url)} 
-                                alt={book.title}
-                                className="h-20 w-14 object-cover rounded-lg shadow-md border border-emerald-200"
-                                onError={(e) => {
-                                  e.target.onerror = null;
-                                  e.target.src = `${API_BASE_URL.replace('/api', '')}/uploads/books/default-book.jpg`;
-                                }}
-                              />
+                            {book.image_url && book.image_url.startsWith('data:image') ? (
+                              <img src={book.image_url} alt={book.title} className="h-20 w-14 object-cover rounded-lg shadow-md border border-emerald-200" />
                             ) : (
                               <div className="h-20 w-14 bg-gradient-to-br from-emerald-100 to-green-200 rounded-lg flex items-center justify-center shadow-sm border border-emerald-200">
                                 <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -601,18 +596,14 @@ const ManageBooks = () => {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-emerald-900 truncate">
-                              {book.title}
-                            </div>
+                            <div className="text-sm font-semibold text-emerald-900 truncate">{book.title}</div>
                             <div className="mt-2">
-                              <span className={`px-3 py-1 text-xs font-medium rounded-full bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800 border border-emerald-200`}>
+                              <span className="px-3 py-1 text-xs font-medium rounded-full bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800 border border-emerald-200">
                                 {book.genre || 'No genre'}
                               </span>
                             </div>
                             {book.description && (
-                              <div className="text-sm text-emerald-600 truncate max-w-xs mt-2">
-                                {book.description.substring(0, 80)}...
-                              </div>
+                              <div className="text-sm text-emerald-600 truncate max-w-xs mt-2">{book.description.substring(0, 80)}...</div>
                             )}
                           </div>
                         </div>
@@ -651,35 +642,25 @@ const ManageBooks = () => {
                             </svg>
                           </div>
                           <div>
-                            <div className="text-sm text-emerald-700">
-                              {formatDisplayDate(book.published_date)}
-                            </div>
+                            <div className="text-sm text-emerald-700">{formatDisplayDate(book.published_date)}</div>
                             <div className="text-xs text-emerald-500">Published</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-5">
                         <div className="px-3 py-2 bg-emerald-50 rounded-lg inline-block">
-                          <div className="text-sm font-bold text-emerald-900">
-                            {formatPrice(book.price)}
-                          </div>
+                          <div className="text-sm font-bold text-emerald-900">{formatPrice(book.price)}</div>
                         </div>
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex space-x-3">
-                          <button
-                            onClick={() => handleEdit(book)}
-                            className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition duration-200 flex items-center text-sm font-medium"
-                          >
+                          <button onClick={() => handleEdit(book)} className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition duration-200 flex items-center text-sm font-medium">
                             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                             Edit
                           </button>
-                          <button
-                            onClick={() => handleDelete(book.id)}
-                            className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition duration-200 flex items-center text-sm font-medium"
-                          >
+                          <button onClick={() => handleDelete(book.id, book.title)} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition duration-200 flex items-center text-sm font-medium">
                             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -702,592 +683,318 @@ const ManageBooks = () => {
 
         {/* Add Book Modal */}
         {showAddModal && (
-          <div className="fixed inset-0 bg-emerald-900 bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 z-10 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-6 rounded-t-2xl">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h2 className="text-2xl font-bold mb-1">Add New Book</h2>
-                    <p className="text-emerald-100">Fill in the book details below</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowAddModal(false);
-                      resetForm();
-                    }}
-                    className="text-emerald-100 hover:text-white"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-6">
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-emerald-700 mb-2">
-                        Select Bookstore *
-                      </label>
-                      <select
-                        name="bookstore_id"
-                        value={formData.bookstore_id}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white"
-                      >
-                        <option value="" className="text-emerald-400">-- Select a Bookstore --</option>
-                        {bookstores.map(bookstore => (
-                          <option key={bookstore.id} value={bookstore.id} className="text-emerald-900">
-                            {bookstore.name} - {bookstore.location}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-emerald-700 mb-2">
-                        Select Author *
-                      </label>
-                      <select
-                        name="author_id"
-                        value={formData.author_id}
-                        onChange={handleChange}
-                        required
-                        disabled={!formData.bookstore_id || authors.length === 0}
-                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white disabled:bg-emerald-50 disabled:text-emerald-400"
-                      >
-                        <option value="" className="text-emerald-400">-- Select an Author --</option>
-                        {authors.length === 0 && formData.bookstore_id ? (
-                          <option value="" disabled className="text-emerald-400">
-                            No authors found for this bookstore. Add authors first.
-                          </option>
-                        ) : null}
-                        {authors.map(author => (
-                          <option key={author.id} value={author.id} className="text-emerald-900">
-                            {author.name}
-                          </option>
-                        ))}
-                      </select>
-                      {formData.bookstore_id && authors.length === 0 && (
-                        <p className="text-xs text-red-500 mt-2">
-                          ⚠️ No authors available. Please add authors to this bookstore first.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Book Image Upload */}
-                  <div>
-                    <label className="block text-sm font-medium text-emerald-700 mb-3">
-                      Book Cover Image
-                    </label>
-                    <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
-                      <div className="flex-shrink-0">
-                        {imagePreview ? (
-                          <div className="relative">
-                            <img 
-                              src={imagePreview} 
-                              alt="Book cover preview" 
-                              className="h-40 w-28 object-cover rounded-xl shadow-lg border-2 border-emerald-200"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleRemoveImage}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition duration-200 shadow-md"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="h-40 w-28 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl flex items-center justify-center border-2 border-dashed border-emerald-300">
-                            <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="border-2 border-dashed border-emerald-300 rounded-xl p-8 bg-gradient-to-br from-emerald-50 to-transparent">
-                          <div className="space-y-3 text-center">
-                            <svg className="mx-auto h-12 w-12 text-emerald-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                            <div className="flex justify-center text-sm text-emerald-600">
-                              <label htmlFor="book-image-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-emerald-600 hover:text-emerald-500 focus-within:outline-none border border-emerald-300 px-4 py-2 rounded-lg hover:bg-emerald-50 transition duration-200">
-                                <span>Choose an image</span>
-                                <input 
-                                  id="book-image-upload" 
-                                  name="book-image" 
-                                  type="file" 
-                                  accept="image/*"
-                                  className="sr-only"
-                                  onChange={handleImageChange}
-                                />
-                              </label>
-                              <p className="pl-3 self-center">or drag and drop</p>
-                            </div>
-                            <p className="text-xs text-emerald-500">
-                              PNG, JPG, GIF up to 5MB
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Book Title *
-                        </label>
-                        <input
-                          type="text"
-                          name="title"
-                          value={formData.title}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                          placeholder="Enter book title"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          name="price"
-                          value={formData.price}
-                          onChange={handleChange}
-                          step="0.01"
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                          placeholder="e.g., 19.99"
-                          min="0"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Genre
-                        </label>
-                        <input
-                          type="text"
-                          name="genre"
-                          value={formData.genre}
-                          onChange={handleChange}
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                          placeholder="e.g., Fiction, Mystery, Science"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Published Date
-                        </label>
-                        <input
-                          type="date"
-                          name="published_date"
-                          value={formData.published_date}
-                          onChange={handleChange}
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-emerald-700 mb-2">
-                        ISBN
-                      </label>
-                      <input
-                        type="text"
-                        name="isbn"
-                        value={formData.isbn}
-                        onChange={handleChange}
-                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                        placeholder="e.g., 978-3-16-148410-0"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-emerald-700 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      name="description"
-                      value={formData.description}
-                      onChange={handleChange}
-                      rows="4"
-                      className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                      placeholder="Describe the book..."
-                    />
-                  </div>
-
-                  {/* Selected Bookstore & Author Info */}
-                  {(selectedBookstore || selectedAuthor) && (
-                    <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-5">
-                      <h3 className="font-semibold text-emerald-800 mb-3 flex items-center">
-                        <svg className="w-5 h-5 mr-2 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Selection Details
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        {selectedBookstore && (
-                          <div className="bg-white p-4 rounded-lg border border-emerald-100">
-                            <div className="flex items-center space-x-4">
-                              <div className="text-2xl bg-emerald-100 p-3 rounded-lg">{selectedBookstore.logo || '📚'}</div>
-                              <div>
-                                <p className="font-semibold text-emerald-900">Bookstore</p>
-                                <p className="text-sm text-emerald-700">{selectedBookstore.name}</p>
-                                <p className="text-xs text-emerald-500">{selectedBookstore.location}</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                        {selectedAuthor && (
-                          <div className="bg-white p-4 rounded-lg border border-emerald-100">
-                            <div className="flex items-center space-x-4">
-                              <div className="text-2xl bg-green-100 p-3 rounded-lg">{selectedAuthor.avatar || '👤'}</div>
-                              <div>
-                                <p className="font-semibold text-green-900">Author</p>
-                                <p className="text-sm text-green-700">{selectedAuthor.name}</p>
-                                <p className="text-xs text-green-500">
-                                  {selectedAuthor.genre || 'No genre specified'}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex justify-end gap-4 pt-6 border-t border-emerald-100">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAddModal(false);
-                        resetForm();
-                      }}
-                      className="px-6 py-3 border border-emerald-300 text-emerald-700 rounded-xl hover:bg-emerald-50 transition duration-200 font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading || uploadingImage}
-                      className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 transition duration-200 font-medium shadow-md hover:shadow-lg"
-                    >
-                      {loading || uploadingImage ? (
-                        <span className="flex items-center">
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Adding...
-                        </span>
-                      ) : 'Add Book'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
+          <BookModal
+            isOpen={showAddModal}
+            onClose={() => { setShowAddModal(false); resetForm(); }}
+            title="Add New Book"
+            formData={formData}
+            imagePreview={imagePreview}
+            onChange={handleChange}
+            onImageChange={handleImageChange}
+            onRemoveImage={handleRemoveImage}
+            onSubmit={handleSubmit}
+            loading={loading}
+            loadingAuthors={loadingAuthors}
+            submitText="Add Book"
+            bookstores={bookstores}
+            authors={authors}
+            selectedBookstore={selectedBookstore}
+            selectedAuthor={selectedAuthor}
+          />
         )}
 
         {/* Edit Book Modal */}
         {showEditModal && selectedBook && (
-          <div className="fixed inset-0 bg-emerald-900 bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 z-10 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-6 rounded-t-2xl">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h2 className="text-2xl font-bold mb-1">Edit Book</h2>
-                    <p className="text-emerald-100">Update the book details</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowEditModal(false);
-                      resetForm();
-                    }}
-                    className="text-emerald-100 hover:text-white"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-6">
-                <form onSubmit={handleUpdate} className="space-y-6">
-                  {/* Same form structure as Add Modal, with different submit handler */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-emerald-700 mb-2">
-                        Select Bookstore *
-                      </label>
-                      <select
-                        name="bookstore_id"
-                        value={formData.bookstore_id}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white"
-                      >
-                        <option value="" className="text-emerald-400">-- Select a Bookstore --</option>
-                        {bookstores.map(bookstore => (
-                          <option key={bookstore.id} value={bookstore.id} className="text-emerald-900">
-                            {bookstore.name} - {bookstore.location}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-emerald-700 mb-2">
-                        Select Author *
-                      </label>
-                      <select
-                        name="author_id"
-                        value={formData.author_id}
-                        onChange={handleChange}
-                        required
-                        disabled={!formData.bookstore_id || authors.length === 0}
-                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white disabled:bg-emerald-50 disabled:text-emerald-400"
-                      >
-                        <option value="" className="text-emerald-400">-- Select an Author --</option>
-                        {authors.length === 0 && formData.bookstore_id ? (
-                          <option value="" disabled className="text-emerald-400">
-                            No authors found for this bookstore. Add authors first.
-                          </option>
-                        ) : null}
-                        {authors.map(author => (
-                          <option key={author.id} value={author.id} className="text-emerald-900">
-                            {author.name}
-                          </option>
-                        ))}
-                      </select>
-                      {formData.bookstore_id && authors.length === 0 && (
-                        <p className="text-xs text-red-500 mt-2">
-                          ⚠️ No authors available. Please add authors to this bookstore first.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Book Image Upload */}
-                  <div>
-                    <label className="block text-sm font-medium text-emerald-700 mb-3">
-                      Book Cover Image
-                    </label>
-                    <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
-                      <div className="flex-shrink-0">
-                        {imagePreview ? (
-                          <div className="relative">
-                            <img 
-                              src={imagePreview} 
-                              alt="Book cover preview" 
-                              className="h-40 w-28 object-cover rounded-xl shadow-lg border-2 border-emerald-200"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleRemoveImage}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition duration-200 shadow-md"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="h-40 w-28 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl flex items-center justify-center border-2 border-dashed border-emerald-300">
-                            <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="border-2 border-dashed border-emerald-300 rounded-xl p-8 bg-gradient-to-br from-emerald-50 to-transparent">
-                          <div className="space-y-3 text-center">
-                            <svg className="mx-auto h-12 w-12 text-emerald-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                            <div className="flex justify-center text-sm text-emerald-600">
-                              <label htmlFor="edit-book-image-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-emerald-600 hover:text-emerald-500 focus-within:outline-none border border-emerald-300 px-4 py-2 rounded-lg hover:bg-emerald-50 transition duration-200">
-                                <span>Choose an image</span>
-                                <input 
-                                  id="edit-book-image-upload" 
-                                  name="edit-book-image" 
-                                  type="file" 
-                                  accept="image/*"
-                                  className="sr-only"
-                                  onChange={handleImageChange}
-                                />
-                              </label>
-                              <p className="pl-3 self-center">or drag and drop</p>
-                            </div>
-                            <p className="text-xs text-emerald-500">
-                              PNG, JPG, GIF up to 5MB
-                            </p>
-                            {selectedBook.image_url && (
-                              <p className="text-xs text-emerald-600 mt-2 font-medium">
-                                Current image will be replaced
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Book Title *
-                        </label>
-                        <input
-                          type="text"
-                          name="title"
-                          value={formData.title}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                          placeholder="Enter book title"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          name="price"
-                          value={formData.price}
-                          onChange={handleChange}
-                          step="0.01"
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                          placeholder="e.g., 19.99"
-                          min="0"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Genre
-                        </label>
-                        <input
-                          type="text"
-                          name="genre"
-                          value={formData.genre}
-                          onChange={handleChange}
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                          placeholder="e.g., Fiction, Mystery, Science"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-emerald-700 mb-2">
-                          Published Date
-                        </label>
-                        <input
-                          type="date"
-                          name="published_date"
-                          value={formData.published_date}
-                          onChange={handleChange}
-                          className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-emerald-700 mb-2">
-                        ISBN
-                      </label>
-                      <input
-                        type="text"
-                        name="isbn"
-                        value={formData.isbn}
-                        onChange={handleChange}
-                        className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                        placeholder="e.g., 978-3-16-148410-0"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-emerald-700 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      name="description"
-                      value={formData.description}
-                      onChange={handleChange}
-                      rows="4"
-                      className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                      placeholder="Describe the book..."
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-4 pt-6 border-t border-emerald-100">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowEditModal(false);
-                        resetForm();
-                      }}
-                      className="px-6 py-3 border border-emerald-300 text-emerald-700 rounded-xl hover:bg-emerald-50 transition duration-200 font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading || uploadingImage}
-                      className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 transition duration-200 font-medium shadow-md hover:shadow-lg"
-                    >
-                      {loading || uploadingImage ? (
-                        <span className="flex items-center">
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Updating...
-                        </span>
-                      ) : 'Update Book'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
+          <BookModal
+            isOpen={showEditModal}
+            onClose={() => { setShowEditModal(false); resetForm(); }}
+            title="Edit Book"
+            formData={formData}
+            imagePreview={imagePreview}
+            onChange={handleChange}
+            onImageChange={handleImageChange}
+            onRemoveImage={handleRemoveImage}
+            onSubmit={handleUpdate}
+            loading={loading}
+            loadingAuthors={loadingAuthors}
+            submitText="Update Book"
+            bookstores={bookstores}
+            authors={authors}
+            selectedBookstore={selectedBookstore}
+            selectedAuthor={selectedAuthor}
+          />
         )}
 
-        {/* Scroll to Top Button */}
         {showScrollTop && (
-          <button
-            onClick={scrollToTop}
-            className="fixed bottom-8 right-8 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 z-40"
-            aria-label="Scroll to top"
-          >
+          <button onClick={scrollToTop} className="fixed bottom-8 right-8 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 z-40">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
             </svg>
           </button>
         )}
+      </div>
+    </div>
+  );
+};
+
+// Reusable Book Modal Component
+const BookModal = ({ 
+  isOpen, 
+  onClose, 
+  title, 
+  formData, 
+  imagePreview,
+  onChange, 
+  onImageChange,
+  onRemoveImage,
+  onSubmit, 
+  loading, 
+  loadingAuthors,
+  submitText,
+  bookstores,
+  authors,
+  selectedBookstore,
+  selectedAuthor
+}) => {
+  if (!isOpen) return null;
+
+  const renderAuthorAvatar = (avatar, name) => {
+    if (!avatar) {
+      return <span className="text-2xl">{name?.charAt(0) || '👤'}</span>;
+    }
+    
+    let avatarUrl = null;
+    let displayText = name?.charAt(0) || '👤';
+    
+    if (typeof avatar === 'string' && avatar.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(avatar);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].startsWith('data:image')) {
+          avatarUrl = parsed[0];
+        }
+      } catch (e) {}
+    } else if (typeof avatar === 'string' && avatar.startsWith('data:image')) {
+      avatarUrl = avatar;
+    } else if (typeof avatar === 'string' && !avatar.startsWith('data:image')) {
+      displayText = avatar;
+    }
+    
+    if (avatarUrl) {
+      return (
+        <img 
+          src={avatarUrl} 
+          alt={name}
+          className="w-full h-full object-cover rounded-lg"
+          onError={(e) => {
+            e.target.style.display = 'none';
+            const parent = e.target.parentElement;
+            if (parent) {
+              parent.innerHTML = `<span class="text-2xl">${name?.charAt(0) || '👤'}</span>`;
+            }
+          }}
+        />
+      );
+    }
+    
+    return <span className="text-2xl">{displayText}</span>;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-emerald-900 bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-emerald-500 to-green-600 text-white p-6 rounded-t-2xl">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">{title}</h2>
+              <p className="text-emerald-100">Fill in the book details below</p>
+            </div>
+            <button onClick={onClose} className="text-emerald-100 hover:text-white">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <form onSubmit={onSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-emerald-700 mb-2">Select Bookstore *</label>
+                <select
+                  name="bookstore_id"
+                  value={formData.bookstore_id}
+                  onChange={onChange}
+                  required
+                  className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white"
+                >
+                  <option value="" className="text-emerald-400">-- Select a Bookstore --</option>
+                  {bookstores.map(bookstore => (
+                    <option key={bookstore.id} value={bookstore.id} className="text-emerald-900">
+                      {bookstore.name} - {bookstore.location}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-emerald-700 mb-2">Select Author *</label>
+                <select
+                  name="author_id"
+                  value={formData.author_id}
+                  onChange={onChange}
+                  required
+                  disabled={!formData.bookstore_id || loadingAuthors}
+                  className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white disabled:bg-emerald-50 disabled:text-emerald-400"
+                >
+                  <option value="" className="text-emerald-400">-- Select an Author --</option>
+                  {loadingAuthors && formData.bookstore_id && (
+                    <option value="" disabled className="text-emerald-400">Loading authors...</option>
+                  )}
+                  {authors.map(author => (
+                    <option key={author.id} value={author.id} className="text-emerald-900">
+                      {author.name}
+                    </option>
+                  ))}
+                  {!loadingAuthors && authors.length === 0 && formData.bookstore_id && (
+                    <option value="" disabled className="text-emerald-400">No authors found. Add authors first.</option>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-emerald-700 mb-3">Book Cover Image</label>
+              <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
+                <div className="flex-shrink-0">
+                  {imagePreview ? (
+                    <div className="relative">
+                      <img src={imagePreview} alt="Book cover preview" className="h-40 w-28 object-cover rounded-xl shadow-lg border-2 border-emerald-200" />
+                      <button type="button" onClick={onRemoveImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition duration-200 shadow-md">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="h-40 w-28 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl flex items-center justify-center border-2 border-dashed border-emerald-300">
+                      <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="border-2 border-dashed border-emerald-300 rounded-xl p-8 bg-gradient-to-br from-emerald-50 to-transparent">
+                    <div className="space-y-3 text-center">
+                      <svg className="mx-auto h-12 w-12 text-emerald-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <div className="flex justify-center text-sm text-emerald-600">
+                        <label htmlFor="book-image-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-emerald-600 hover:text-emerald-500 focus-within:outline-none border border-emerald-300 px-4 py-2 rounded-lg hover:bg-emerald-50 transition duration-200">
+                          <span>Choose an image</span>
+                          <input id="book-image-upload" name="book-image" type="file" accept="image/jpeg,image/jpg,image/png,image/gif,image/webp" className="sr-only" onChange={onImageChange} />
+                        </label>
+                        <p className="pl-3 self-center">or drag and drop</p>
+                      </div>
+                      <p className="text-xs text-emerald-500">PNG, JPG, GIF up to 5MB (will be compressed)</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-emerald-700 mb-2">Book Title *</label>
+                  <input type="text" name="title" value={formData.title} onChange={onChange} required className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" placeholder="Enter book title" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-emerald-700 mb-2">Price ($)</label>
+                  <input type="number" name="price" value={formData.price} onChange={onChange} step="0.01" className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" placeholder="e.g., 19.99" min="0" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-emerald-700 mb-2">Genre</label>
+                  <input type="text" name="genre" value={formData.genre} onChange={onChange} className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" placeholder="e.g., Fiction, Mystery, Science" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-emerald-700 mb-2">Published Date</label>
+                  <input type="date" name="published_date" value={formData.published_date} onChange={onChange} className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-emerald-700 mb-2">ISBN</label>
+                <input type="text" name="isbn" value={formData.isbn} onChange={onChange} className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" placeholder="e.g., 978-3-16-148410-0" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-emerald-700 mb-2">Description</label>
+              <textarea name="description" value={formData.description} onChange={onChange} rows="4" className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" placeholder="Describe the book..." />
+            </div>
+
+            {(selectedBookstore || selectedAuthor) && (
+              <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-5">
+                <h3 className="font-semibold text-emerald-800 mb-3 flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Selection Details
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {selectedBookstore && (
+                    <div className="bg-white p-4 rounded-lg border border-emerald-100">
+                      <div className="flex items-center space-x-4">
+                        <div className="text-2xl bg-emerald-100 p-3 rounded-lg w-12 h-12 flex items-center justify-center">
+                          {selectedBookstore.logo || '📚'}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-emerald-900">Bookstore</p>
+                          <p className="text-sm text-emerald-700">{selectedBookstore.name}</p>
+                          <p className="text-xs text-emerald-500">{selectedBookstore.location}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {selectedAuthor && (
+                    <div className="bg-white p-4 rounded-lg border border-emerald-100">
+                      <div className="flex items-center space-x-4">
+                        <div className="bg-green-100 p-3 rounded-lg flex items-center justify-center w-12 h-12 overflow-hidden">
+                          {renderAuthorAvatar(selectedAuthor.avatar, selectedAuthor.name)}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-green-900">Author</p>
+                          <p className="text-sm text-green-700">{selectedAuthor.name}</p>
+                          <p className="text-xs text-green-500">{selectedAuthor.genre || 'No genre specified'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-4 pt-6 border-t border-emerald-100">
+              <button type="button" onClick={onClose} className="px-6 py-3 border border-emerald-300 text-emerald-700 rounded-xl hover:bg-emerald-50 transition duration-200 font-medium">Cancel</button>
+              <button type="submit" disabled={loading} className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 transition duration-200 font-medium shadow-md hover:shadow-lg">
+                {loading ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                  </span>
+                ) : submitText}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

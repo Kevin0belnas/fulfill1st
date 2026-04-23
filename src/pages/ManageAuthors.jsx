@@ -30,7 +30,9 @@ const ManageAuthors = () => {
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'ascending' });
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  const [avatarPreview, setAvatarPreview] = useState(null);
   const location = useLocation();
+  const avatarInputRef = useRef(null);
 
   // Premium green theme
   const theme = {
@@ -90,7 +92,26 @@ const ManageAuthors = () => {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setAuthors(data.data || []);
+          // Parse avatar data - handle Base64 strings from API
+          const processedAuthors = (data.data || []).map(author => {
+            let avatar = author.avatar;
+            
+            // If avatar is a JSON string (from database), parse it
+            if (typeof avatar === 'string' && avatar.startsWith('{')) {
+              try {
+                const parsed = JSON.parse(avatar);
+                avatar = Array.isArray(parsed) ? parsed[0] : parsed;
+              } catch (e) {
+                // Keep as is
+              }
+            }
+            
+            return {
+              ...author,
+              avatar: avatar
+            };
+          });
+          setAuthors(processedAuthors);
         }
       }
     } catch (error) {
@@ -119,6 +140,50 @@ const ManageAuthors = () => {
     }
   };
 
+  // Compress image for Base64 avatar
+  const compressImage = (file, maxWidth = 100, maxHeight = 100, quality = 0.7) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > maxWidth) {
+              height = (height * maxWidth) / width;
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = (width * maxHeight) / height;
+              height = maxHeight;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((blob) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+              resolve(reader.result);
+            };
+          }, 'image/jpeg', quality);
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
+  };
+
   const [formData, setFormData] = useState({
     bookstore_id: '',
     name: '',
@@ -134,6 +199,40 @@ const ManageAuthors = () => {
       ...prev,
       [name]: name === 'books_count' ? parseInt(value) || 0 : value
     }));
+  };
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 1 * 1024 * 1024) {
+        showToast('Avatar image should be less than 1MB', 'error');
+        return;
+      }
+      
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!validTypes.includes(file.type)) {
+        showToast('Please select a valid image file (JPEG, PNG, GIF, WebP)', 'error');
+        return;
+      }
+      
+      try {
+        const compressedBase64 = await compressImage(file, 100, 100, 0.7);
+        setFormData(prev => ({ ...prev, avatar: compressedBase64 }));
+        setAvatarPreview(compressedBase64);
+        showToast('Avatar processed successfully', 'success');
+      } catch (error) {
+        console.error('Error processing avatar:', error);
+        showToast('Failed to process avatar image', 'error');
+      }
+    }
+  };
+
+  const resetAvatar = () => {
+    setFormData(prev => ({ ...prev, avatar: '👤' }));
+    setAvatarPreview(null);
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = '';
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -184,6 +283,11 @@ const ManageAuthors = () => {
       avatar: author.avatar || '👤',
       books_count: author.books_count || 0
     });
+    if (author.avatar && author.avatar.startsWith('data:image')) {
+      setAvatarPreview(author.avatar);
+    } else {
+      setAvatarPreview(null);
+    }
     setShowEditModal(true);
   };
 
@@ -259,7 +363,11 @@ const ManageAuthors = () => {
       avatar: '👤',
       books_count: 0
     });
+    setAvatarPreview(null);
     setSelectedAuthor(null);
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = '';
+    }
   };
 
   const showToast = (message, type) => {
@@ -304,6 +412,70 @@ const ManageAuthors = () => {
     return bookstore ? bookstore.name : 'Unknown Bookstore';
   };
 
+  // Helper function to render avatar (image or emoji)
+  const renderAvatar = (avatar, name) => {
+    if (!avatar) return <span className="text-2xl">👤</span>;
+    
+    // Check if it's a JSON string array (from database)
+    if (typeof avatar === 'string' && avatar.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(avatar);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].startsWith('data:image')) {
+          // Extract the Base64 string from the array
+          avatar = parsed[0];
+        }
+      } catch (e) {
+        // Fall through
+      }
+    }
+    
+    // Check if it's a Base64 image
+    if (typeof avatar === 'string' && avatar.startsWith('data:image')) {
+      return (
+        <img 
+          src={avatar} 
+          alt={name}
+          className="w-10 h-10 rounded-full object-cover border border-emerald-200"
+          onError={(e) => {
+            e.target.style.display = 'none';
+            const parent = e.target.parentElement;
+            if (parent) {
+              parent.innerHTML = '<span class="text-2xl">👤</span>';
+            }
+          }}
+        />
+      );
+    }
+    
+    // Handle JSON object (fallback for old data)
+    if (typeof avatar === 'string' && avatar.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(avatar);
+        if (Array.isArray(parsed) && parsed[0] && parsed[0].startsWith('data:image')) {
+          return (
+            <img 
+              src={parsed[0]} 
+              alt={name}
+              className="w-10 h-10 rounded-full object-cover border border-emerald-200"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                const parent = e.target.parentElement;
+                if (parent) {
+                  parent.innerHTML = '<span class="text-2xl">👤</span>';
+                }
+              }}
+            />
+          );
+        }
+      } catch (e) {
+        // Fall through to emoji
+      }
+    }
+    
+    // Default - emoji
+    return <span className="text-2xl">{avatar || '👤'}</span>;
+  };
+
   // Stats calculation
   const stats = {
     total: authors.length,
@@ -319,20 +491,15 @@ const ManageAuthors = () => {
     return (
       <div className={`min-h-screen ${theme.bg.primary} p-4 sm:p-6 lg:p-8`}>
         <div className="max-w-screen mx-auto">
-          {/* Header Skeleton */}
           <div className="mb-8">
             <div className="h-8 w-48 bg-emerald-200 rounded-lg mb-2 animate-pulse"></div>
             <div className="h-4 w-64 bg-emerald-200 rounded animate-pulse"></div>
           </div>
-
-          {/* Stats Skeleton */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="h-32 bg-emerald-100 rounded-2xl animate-pulse"></div>
             ))}
           </div>
-
-          {/* Table Skeleton */}
           <div className="bg-white rounded-2xl shadow-lg p-6">
             <div className="space-y-4">
               {[...Array(5)].map((_, i) => (
@@ -565,8 +732,8 @@ const ManageAuthors = () => {
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center">
-                          <div className="flex-shrink-0">
-                            <div className="text-3xl mr-4">{author.avatar || '👤'}</div>
+                          <div className="flex-shrink-0 mr-3">
+                            {renderAvatar(author.avatar, author.name)}
                           </div>
                           <div>
                             <div className="font-medium text-emerald-900">{author.name}</div>
@@ -623,7 +790,7 @@ const ManageAuthors = () => {
                     </motion.tr>
                   ))}
                 </tbody>
-              </table>
+               </table>
             </div>
           ) : (
             <div className="text-center py-12 px-6">
@@ -713,12 +880,16 @@ const ManageAuthors = () => {
         }}
         title="Add New Author"
         formData={formData}
+        avatarPreview={avatarPreview}
         onChange={handleChange}
+        onAvatarChange={handleAvatarChange}
+        onResetAvatar={resetAvatar}
         onSubmit={handleSubmit}
         loading={loading}
         submitText="Add Author"
         theme={theme}
         bookstores={bookstores}
+        avatarInputRef={avatarInputRef}
       />
 
       {/* Edit Author Modal */}
@@ -730,12 +901,16 @@ const ManageAuthors = () => {
         }}
         title="Edit Author"
         formData={formData}
+        avatarPreview={avatarPreview}
         onChange={handleChange}
+        onAvatarChange={handleAvatarChange}
+        onResetAvatar={resetAvatar}
         onSubmit={handleUpdate}
         loading={loading}
         submitText="Update Author"
         theme={theme}
         bookstores={bookstores}
+        avatarInputRef={avatarInputRef}
       />
     </div>
   );
@@ -747,12 +922,16 @@ const AuthorModal = ({
   onClose, 
   title, 
   formData, 
+  avatarPreview,
   onChange, 
+  onAvatarChange,
+  onResetAvatar,
   onSubmit, 
   loading, 
   submitText,
   theme,
-  bookstores
+  bookstores,
+  avatarInputRef
 }) => {
   if (!isOpen) return null;
 
@@ -791,10 +970,65 @@ const AuthorModal = ({
           </div>
 
           <form onSubmit={onSubmit} className="space-y-6">
-            {/* Avatar Preview */}
+            {/* Avatar Section */}
             <div className="flex flex-col items-center mb-6">
-              <div className="text-6xl mb-4">{formData.avatar || '👤'}</div>
-              <p className="text-sm text-emerald-600">Avatar Preview</p>
+              <div className="relative mb-4">
+                {avatarPreview ? (
+                  <img 
+                    src={avatarPreview} 
+                    alt="Avatar preview" 
+                    className="w-24 h-24 rounded-full object-cover border-4 border-emerald-200 shadow-lg"
+                  />
+                ) : formData.avatar && formData.avatar.startsWith('data:image') ? (
+                  <img 
+                    src={formData.avatar} 
+                    alt="Avatar preview" 
+                    className="w-24 h-24 rounded-full object-cover border-4 border-emerald-200 shadow-lg"
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center text-5xl border-4 border-emerald-200 shadow-lg">
+                    {formData.avatar || '👤'}
+                  </div>
+                )}
+                {(avatarPreview || (formData.avatar && formData.avatar.startsWith('data:image'))) && (
+                  <button
+                    type="button"
+                    onClick={onResetAvatar}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition shadow-md"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              
+              <div className="flex gap-3">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                  onChange={onAvatarChange}
+                  className="hidden"
+                  id="avatar-upload"
+                />
+                <label
+                  htmlFor="avatar-upload"
+                  className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition cursor-pointer text-sm font-medium"
+                >
+                  Upload Image
+                </label>
+                <button
+                  type="button"
+                  onClick={onResetAvatar}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm font-medium"
+                >
+                  Use Emoji
+                </button>
+              </div>
+              <p className="text-xs text-emerald-500 mt-2">
+                Max 1MB, auto-compressed to 100×100px
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -866,26 +1100,28 @@ const AuthorModal = ({
                 />
               </div>
 
-              {/* Avatar Emoji */}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-emerald-700 mb-2">
-                  Avatar Emoji
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="text"
-                    name="avatar"
-                    value={formData.avatar}
-                    onChange={onChange}
-                    className="flex-1 px-4 py-3 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-emerald-900 text-center text-2xl"
-                    placeholder="👤"
-                    maxLength="2"
-                  />
-                  <div className="text-3xl text-emerald-600">
-                    {formData.avatar || '👤'}
+              {/* Avatar Emoji (when not using image) */}
+              {!avatarPreview && !(formData.avatar && formData.avatar.startsWith('data:image')) && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-emerald-700 mb-2">
+                    Avatar Emoji
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="text"
+                      name="avatar"
+                      value={formData.avatar}
+                      onChange={onChange}
+                      className="flex-1 px-4 py-3 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-emerald-900 text-center text-2xl"
+                      placeholder="👤"
+                      maxLength="2"
+                    />
+                    <div className="text-3xl text-emerald-600">
+                      {formData.avatar || '👤'}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Biography */}

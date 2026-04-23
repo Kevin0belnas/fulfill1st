@@ -105,7 +105,10 @@ const Bookstore = () => {
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
       const data = await response.json();
-      setBookstores(data.success ? (data.data || []) : (data || []));
+      const bookstoresData = data.success ? (data.data || []) : (data || []);
+      
+      // No need to process image URLs - they come as Base64
+      setBookstores(bookstoresData);
     } catch (error) {
       console.error('Error:', error);
       if (!isProduction) {
@@ -144,6 +147,38 @@ const Bookstore = () => {
     setBookstores([]);
   };
 
+  // Enhanced getImageUrl function for Base64
+  const getImageUrl = (imageData) => {
+    if (!imageData) return null;
+    
+    // Handle Base64 images (starts with data:image)
+    if (imageData.startsWith('data:image')) {
+      return imageData;
+    }
+    
+    // Handle full URLs (legacy)
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
+      return imageData;
+    }
+    
+    // Handle paths (legacy)
+    if (imageData.startsWith('/')) {
+      return `${config.imageBaseUrl}${imageData}`;
+    }
+    
+    // Handle JSON string (legacy)
+    try {
+      const parsed = JSON.parse(imageData);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed[0];
+      }
+      return parsed;
+    } catch (e) {
+      // Not JSON, return as is
+      return imageData;
+    }
+  };
+
   const categories = [...new Set(bookstores.map(b => b.category).filter(Boolean))];
 
   const sortedBookstores = [...bookstores].sort((a, b) => {
@@ -168,16 +203,6 @@ const Bookstore = () => {
     
     return matchesSearch && matchesCategory;
   });
-
-  const getImageUrl = (imageUrl) => {
-    if (!imageUrl) return null;
-    if (imageUrl.startsWith('http')) return imageUrl;
-    if (imageUrl.startsWith('/')) {
-      const cleanPath = imageUrl.startsWith('/uploads') ? imageUrl : `/uploads${imageUrl}`;
-      return `${config.imageBaseUrl}${cleanPath}`;
-    }
-    return `${config.imageBaseUrl}/uploads/bookstores/${imageUrl}`;
-  };
 
   // Compact Loading skeleton
   if (loading) {
@@ -241,7 +266,7 @@ const Bookstore = () => {
   }
 
   return (
-    <div className={`max-h-screen ${theme.bg.primary} pt-5 pb-8 relative`}>
+    <div className={`min-h-screen ${theme.bg.primary} pt-5 pb-8 relative`}>
       {/* Development banner */}
       {!isProduction && (
         <div className="fixed top-3 right-3 z-50">
@@ -540,11 +565,13 @@ const CompactBookstoreCard = ({ bookstore, index, categoryColors, getImageUrl, t
                 onError={(e) => {
                   e.target.style.display = 'none';
                   const parent = e.target.parentElement;
-                  parent.innerHTML = `
-                    <div class="w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center">
-                      <div class="text-4xl text-white/90">${bookstore.logo || '📚'}</div>
-                    </div>
-                  `;
+                  if (parent) {
+                    parent.innerHTML = `
+                      <div class="w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center">
+                        <div class="text-4xl text-white/90">${bookstore.logo || '📚'}</div>
+                      </div>
+                    `;
+                  }
                 }}
               />
             ) : (
@@ -659,11 +686,13 @@ const CompactBookstoreListItem = ({ bookstore, index, categoryColors, getImageUr
                     onError={(e) => {
                       e.target.style.display = 'none';
                       const parent = e.target.parentElement;
-                      parent.innerHTML = `
-                        <div class="w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center">
-                          <div class="text-2xl text-white/90">${bookstore.logo || '📚'}</div>
-                        </div>
-                      `;
+                      if (parent) {
+                        parent.innerHTML = `
+                          <div class="w-full h-full bg-gradient-to-br ${categoryColor} flex items-center justify-center">
+                            <div class="text-2xl text-white/90">${bookstore.logo || '📚'}</div>
+                          </div>
+                        `;
+                      }
                     }}
                   />
                 </div>

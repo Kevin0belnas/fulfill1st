@@ -1,4 +1,3 @@
-// pages/ManageBookstores.jsx
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -26,7 +25,7 @@ const ManageBookstores = () => {
   const [selectedBookstore, setSelectedBookstore] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [stats, setStats] = useState({ total: 0, categories: 0, active: 0 });
-  const [activeFilter, setActiveFilter] = useState('all'); // all, active, inactive
+  const [activeFilter, setActiveFilter] = useState('all');
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'ascending' });
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const fileInputRef = useRef(null);
@@ -150,13 +149,56 @@ const ManageBookstores = () => {
     });
     
     if (bookstore.image_url) {
-      const imageUrl = bookstore.image_url.startsWith('http') 
-        ? bookstore.image_url 
-        : `${config.imageBaseUrl}${bookstore.image_url}`;
-      setPreviewImage(imageUrl);
+      setPreviewImage(bookstore.image_url); // Now contains Base64
+    } else {
+      setPreviewImage(null);
     }
     
     setShowEditModal(true);
+  };
+
+  // Compress image for Base64
+  const compressImage = (file, maxWidth = 400, maxHeight = 200, quality = 0.8) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > maxWidth) {
+              height = (height * maxWidth) / width;
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = (width * maxHeight) / height;
+              height = maxHeight;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((blob) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+              resolve(reader.result);
+            };
+          }, 'image/jpeg', quality);
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
   };
 
   const [formData, setFormData] = useState({
@@ -181,9 +223,9 @@ const ManageBookstores = () => {
     if (type === 'file') {
       const file = files[0];
       if (file) {
-        // Validate file size (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-          showToast('Image size should be less than 10MB', 'error');
+        // Validate file size (max 5MB before compression)
+        if (file.size > 5 * 1024 * 1024) {
+          showToast('Image size should be less than 5MB', 'error');
           return;
         }
         
@@ -194,17 +236,16 @@ const ManageBookstores = () => {
           return;
         }
         
-        setFormData(prev => ({ ...prev, [name]: file }));
-        
-        // Create preview
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setPreviewImage(reader.result);
-        };
-        reader.readAsDataURL(file);
+        // Process image
+        compressImage(file, 400, 200, 0.8).then(compressedBase64 => {
+          setFormData(prev => ({ ...prev, [name]: compressedBase64 }));
+          setPreviewImage(compressedBase64);
+        }).catch(error => {
+          console.error('Error compressing image:', error);
+          showToast('Failed to process image', 'error');
+        });
       }
     } else if (name === 'rating') {
-      // Round rating to one decimal place
       const roundedValue = Math.round(parseFloat(value) * 10) / 10;
       setFormData(prev => ({ ...prev, [name]: roundedValue }));
     } else {
@@ -217,19 +258,29 @@ const ManageBookstores = () => {
     setLoading(true);
 
     try {
-      const formDataToSend = new FormData();
-      Object.keys(formData).forEach(key => {
-        if (key === 'image' && formData[key]) {
-          formDataToSend.append('image', formData[key]);
-        } else if (key !== 'image') {
-          formDataToSend.append(key, formData[key]);
-        }
-      });
+      const submitData = {
+        name: formData.name,
+        location: formData.location,
+        address: formData.address,
+        established: formData.established,
+        description: formData.description,
+        email: formData.email,
+        phone: formData.phone,
+        website: formData.website,
+        logo: formData.logo,
+        category: formData.category,
+        rating: formData.rating,
+        reviews: formData.reviews,
+        image: formData.image // Base64 string or null
+      };
 
       const response = await fetch(`${config.apiBaseUrl}/bookstores`, {
         method: 'POST',
         credentials: 'include',
-        body: formDataToSend,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(submitData),
       });
 
       const data = await response.json();
@@ -255,19 +306,29 @@ const ManageBookstores = () => {
     setLoading(true);
 
     try {
-      const formDataToSend = new FormData();
-      Object.keys(formData).forEach(key => {
-        if (key === 'image' && formData[key]) {
-          formDataToSend.append('image', formData[key]);
-        } else if (key !== 'image') {
-          formDataToSend.append(key, formData[key]);
-        }
-      });
+      const submitData = {
+        name: formData.name,
+        location: formData.location,
+        address: formData.address,
+        established: formData.established,
+        description: formData.description,
+        email: formData.email,
+        phone: formData.phone,
+        website: formData.website,
+        logo: formData.logo,
+        category: formData.category,
+        rating: formData.rating,
+        reviews: formData.reviews,
+        image: formData.image // Base64 string or null
+      };
 
       const response = await fetch(`${config.apiBaseUrl}/bookstores/${selectedBookstore.id}`, {
         method: 'PUT',
         credentials: 'include',
-        body: formDataToSend,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(submitData),
       });
 
       const data = await response.json();
@@ -361,20 +422,15 @@ const ManageBookstores = () => {
     return (
       <div className={`min-h-screen ${theme.bg.primary} p-4 sm:p-6 lg:p-8`}>
         <div className="max-w-screen mx-auto">
-          {/* Header Skeleton */}
           <div className="mb-8">
             <div className="h-8 w-48 bg-emerald-200 rounded-lg mb-2 animate-pulse"></div>
             <div className="h-4 w-64 bg-emerald-200 rounded animate-pulse"></div>
           </div>
-
-          {/* Stats Skeleton */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="h-32 bg-emerald-100 rounded-2xl animate-pulse"></div>
             ))}
           </div>
-
-          {/* Table Skeleton */}
           <div className="bg-white rounded-2xl shadow-lg p-6">
             <div className="space-y-4">
               {[...Array(5)].map((_, i) => (
@@ -502,7 +558,6 @@ const ManageBookstores = () => {
           className={`${theme.bg.card} rounded-2xl p-6 border ${theme.border.light} shadow-lg mb-6`}
         >
           <div className="flex flex-col lg:flex-row gap-4">
-            {/* Search Input */}
             <div className="flex-1">
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -528,7 +583,6 @@ const ManageBookstores = () => {
               </div>
             </div>
 
-            {/* Filter Buttons */}
             <div className="flex gap-2">
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -556,7 +610,6 @@ const ManageBookstores = () => {
               </motion.button>
             </div>
 
-            {/* Category Filter */}
             <div className="relative">
               <select
                 value={activeFilter === 'all' ? '' : activeFilter}
@@ -645,9 +698,24 @@ const ManageBookstores = () => {
                       <td className="px-6 py-4">
                         <div className="flex items-center">
                           <div className="flex-shrink-0">
-                            <div className="text-2xl mr-3">{bookstore.logo || '📚'}</div>
+                            {bookstore.image_url ? (
+                              <img 
+                                src={bookstore.image_url} 
+                                alt={bookstore.name}
+                                className="w-12 h-12 rounded-lg object-cover border border-emerald-200"
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  const parent = e.target.parentElement;
+                                  if (parent) {
+                                    parent.innerHTML = `<div class="text-2xl">${bookstore.logo || '📚'}</div>`;
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="text-2xl mr-3">{bookstore.logo || '📚'}</div>
+                            )}
                           </div>
-                          <div>
+                          <div className="ml-3">
                             <div className="font-medium text-emerald-900">{bookstore.name}</div>
                             <div className="text-sm text-emerald-600 truncate max-w-xs">{bookstore.email}</div>
                           </div>
@@ -803,8 +871,6 @@ const ManageBookstores = () => {
         loading={loading}
         submitText="Update Bookstore"
         theme={theme}
-        currentImage={selectedBookstore?.image_url}
-        imageBaseUrl={config.imageBaseUrl}
       />
     </div>
   );
@@ -822,9 +888,7 @@ const BookstoreModal = ({
   onSubmit, 
   loading, 
   submitText,
-  theme,
-  currentImage,
-  imageBaseUrl
+  theme
 }) => {
   if (!isOpen) return null;
 
@@ -840,7 +904,7 @@ const BookstoreModal = ({
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className={`${theme.bg.modal} mt-15 rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border ${theme.border.light}`}
+        className={`${theme.bg.modal} rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border ${theme.border.light}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6">
@@ -864,7 +928,7 @@ const BookstoreModal = ({
 
           <form onSubmit={onSubmit} className="space-y-6">
             {/* Image Upload Section */}
-            <div className="mt-10">
+            <div>
               <label className="block text-sm font-medium text-emerald-700 mb-3">
                 Bookstore Image
               </label>
@@ -876,24 +940,6 @@ const BookstoreModal = ({
                         src={previewImage} 
                         alt="Preview" 
                         className="w-full h-full object-cover"
-                      />
-                    ) : currentImage && imageBaseUrl ? (
-                      <img 
-                        src={currentImage.startsWith('http') ? currentImage : `${imageBaseUrl}${currentImage}`}
-                        alt="Current"
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          const parent = e.target.parentElement;
-                          parent.innerHTML = `
-                            <div class="text-emerald-400 text-center p-4">
-                              <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                              <span class="text-sm">Current image</span>
-                            </div>
-                          `;
-                        }}
                       />
                     ) : (
                       <div className="text-emerald-400 text-center p-4">
@@ -923,12 +969,11 @@ const BookstoreModal = ({
                         file:transition-colors"
                     />
                     <p className="text-xs text-emerald-500 mt-2">
-                      Recommended: 800×400px JPG or PNG (max 10MB)
+                      Recommended: 800×400px JPG or PNG (max 5MB). Images will be compressed automatically.
                     </p>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Logo Emoji */}
                     <div>
                       <label className="block text-sm font-medium text-emerald-700 mb-2">
                         Logo Emoji
@@ -944,7 +989,6 @@ const BookstoreModal = ({
                       />
                     </div>
 
-                    {/* Rating */}
                     <div>
                       <label className="block text-sm font-medium text-emerald-700 mb-2">
                         Rating: <span className="font-bold text-emerald-600">{formData.rating}</span>
@@ -1118,7 +1162,7 @@ const BookstoreModal = ({
               </label>
               <textarea
                 name="description"
-                value={formData.description}
+                                value={formData.description}
                 onChange={onChange}
                 rows="4"
                 className="w-full px-4 py-3 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-emerald-900 resize-none"

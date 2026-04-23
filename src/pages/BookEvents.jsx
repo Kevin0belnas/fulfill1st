@@ -657,7 +657,7 @@ const BookEvents = () => {
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex min-h-full mt-10 items-center justify-center p-3">
               <div 
-                className="relative bg-white rounded-lg shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh] animate-slide-up"
+                className="relative bg-white rounded-lg shadow-2xl w-full max-w-7xl overflow-hidden max-h-[95vh] animate-slide-up"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Close button */}
