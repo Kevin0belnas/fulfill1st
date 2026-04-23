@@ -1,10 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast, Toaster } from 'react-hot-toast';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL ? 
-  import.meta.env.VITE_API_BASE_URL.replace('/api', '') : 
-  'http://localhost:3000';
 
 const ManageBookEvents = () => {
   const navigate = useNavigate();
@@ -43,6 +41,174 @@ const ManageBookEvents = () => {
     fetchEvents();
   }, []);
 
+  // Convert file to Base64
+  const convertFileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  // Compress image before converting to Base64
+  const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > maxWidth) {
+              height *= maxWidth / width;
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width *= maxHeight / height;
+              height = maxHeight;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((blob) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+              resolve(reader.result);
+            };
+          }, file.type, quality);
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
+  };
+
+  // Handle image upload with compression
+  const handleImageUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    setModalLoading(true);
+    
+    try {
+      const fileObjects = await Promise.all(
+        files.map(async (file) => {
+          // Validate file size (max 5MB before compression)
+          if (file.size > 5 * 1024 * 1024) {
+            toast.error(`${file.name} is larger than 5MB and will be skipped`);
+            return null;
+          }
+          
+          // Compress image
+          const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+          
+          return {
+            base64: compressedBase64,
+            name: file.name,
+            size: file.size,
+            type: file.type
+          };
+        })
+      );
+      
+      const validFiles = fileObjects.filter(f => f !== null);
+      if (validFiles.length > 0) {
+        setGalleryImages(prev => [...prev, ...validFiles]);
+        toast.success(`${validFiles.length} image(s) added successfully`);
+      }
+    } catch (error) {
+      console.error('Error converting images:', error);
+      toast.error('Failed to process images. Please try again.');
+    } finally {
+      setModalLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  // Handle drag and drop
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    
+    try {
+      const fileObjects = await Promise.all(
+        files.map(async (file) => {
+          if (file.size > 5 * 1024 * 1024) {
+            toast.error(`${file.name} is larger than 5MB and will be skipped`);
+            return null;
+          }
+          const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+          return {
+            base64: compressedBase64,
+            name: file.name,
+            size: file.size,
+            type: file.type
+          };
+        })
+      );
+      
+      const validFiles = fileObjects.filter(f => f !== null);
+      if (validFiles.length > 0) {
+        setGalleryImages(prev => [...prev, ...validFiles]);
+        toast.success(`${validFiles.length} image(s) added successfully`);
+      }
+    } catch (error) {
+      console.error('Error converting dropped images:', error);
+      toast.error('Failed to process dropped images');
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleRemoveNewImage = (index) => {
+    setGalleryImages(prev => prev.filter((_, i) => i !== index));
+    toast.success('Image removed');
+  };
+
+  const handleRemoveExistingImage = async (imageIndex) => {
+    if (!editingEvent) return;
+    
+    if (!window.confirm('Are you sure you want to remove this image?')) {
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/events/${editingEvent.id}/image/${imageIndex}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setExistingImages(prev => prev.filter((_, i) => i !== imageIndex));
+        toast.success('Image removed successfully');
+        fetchEvents(); // Refresh to update the list
+      } else {
+        toast.error(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error removing image:', error);
+      toast.error('Failed to remove image');
+    }
+  };
+
   // Fetch events from API
   const fetchEvents = async () => {
     try {
@@ -57,16 +223,14 @@ const ManageBookEvents = () => {
       });
       const data = await response.json();
       
-      console.log('📋 Fetched events data:', data); // Debug log
-      
       if (data.success) {
         setEvents(data.data);
       } else {
-        console.error('Failed to fetch events:', data.error);
+        toast.error('Failed to fetch events');
       }
     } catch (error) {
       console.error('Error fetching events:', error);
-      alert('Failed to fetch events');
+      toast.error('Failed to fetch events');
     } finally {
       setLoading(false);
     }
@@ -103,24 +267,6 @@ const ManageBookEvents = () => {
       return date.toISOString().split('T')[0];
     };
 
-    // Format gallery images - extract just filenames from paths
-    const extractImageFilenames = (images) => {
-      if (!images || !Array.isArray(images)) return [];
-      
-      return images.map(img => {
-        // If it's a full URL, extract just the filename
-        if (img.startsWith('http')) {
-          return img.split('/').pop();
-        }
-        // If it starts with /uploads/, extract filename
-        if (img.startsWith('/uploads/')) {
-          return img.split('/').pop();
-        }
-        // If it's already just a filename
-        return img;
-      });
-    };
-
     setFormData({
       title: event.title || '',
       startDate: formatDateForInput(event.start_date) || '',
@@ -135,21 +281,9 @@ const ManageBookEvents = () => {
       featured: event.featured || false
     });
     
-    // Set existing images with full URLs for display
+    // Set existing images (already Base64 strings)
     if (event.gallery_images && event.gallery_images.length > 0) {
-      console.log('🖼️ Event gallery images:', event.gallery_images);
-      
-      const imageFilenames = extractImageFilenames(event.gallery_images);
-      console.log('📸 Extracted filenames:', imageFilenames);
-      
-      // Create full URLs for display
-      const fullUrls = imageFilenames.map(filename => {
-        // Check if it's already a full URL
-        if (filename.startsWith('http')) return filename;
-        return `${IMAGE_BASE_URL}/uploads/events/${filename}`;
-      });
-      
-      setExistingImages(fullUrls);
+      setExistingImages(event.gallery_images);
     } else {
       setExistingImages([]);
     }
@@ -161,7 +295,7 @@ const ManageBookEvents = () => {
 
   // Delete event
   const handleDeleteEvent = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this event?')) {
+    if (!window.confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
       return;
     }
 
@@ -173,14 +307,14 @@ const ManageBookEvents = () => {
       const data = await response.json();
 
       if (data.success) {
-        alert('Event deleted successfully');
+        toast.success('Event deleted successfully');
         fetchEvents();
       } else {
-        alert(`Error: ${data.error}`);
+        toast.error(`Error: ${data.error}`);
       }
     } catch (error) {
       console.error('Error deleting event:', error);
-      alert('Failed to delete event');
+      toast.error('Failed to delete event');
     }
   };
 
@@ -219,126 +353,50 @@ const ManageBookEvents = () => {
     }));
   };
 
-  // Image upload handlers
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-
-    const fileObjects = files.map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name
-    }));
-
-    setGalleryImages(prev => [...prev, ...fileObjects]);
-    e.target.value = '';
-  };
-
-  const handleRemoveNewImage = (index) => {
-    URL.revokeObjectURL(galleryImages[index].preview);
-    setGalleryImages(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleRemoveExistingImage = async (imageUrl) => {
-    if (!editingEvent) return;
-    
-    // Extract filename from URL
-    const imageName = imageUrl.split('/').pop();
-    console.log('🗑️ Deleting image:', imageName);
-    
-    try {
-      const response = await fetch(`${API_BASE_URL}/events/${editingEvent.id}/image/${imageName}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
-      const data = await response.json();
-      
-      console.log('Delete image response:', data);
-      
-      if (data.success) {
-        setExistingImages(prev => prev.filter(img => !img.includes(imageName)));
-        alert('Image removed successfully');
-        // Refresh events to get updated data
-        fetchEvents();
-      } else {
-        alert(`Error: ${data.error}`);
-      }
-    } catch (error) {
-      console.error('Error removing image:', error);
-      alert('Failed to remove image');
-    }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    const fileObjects = files.map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name
-    }));
-    setGalleryImages(prev => [...prev, ...fileObjects]);
-  };
-
   // Submit form
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate dates
+    if (formData.startDate && formData.endDate && new Date(formData.startDate) > new Date(formData.endDate)) {
+      toast.error('End date must be after start date');
+      return;
+    }
+    
     setModalLoading(true);
 
-    const submitFormData = new FormData();
-    
-    // Append all form fields
-    Object.keys(formData).forEach(key => {
-      if (key === 'featured') {
-        submitFormData.append(key, formData[key] ? 'true' : 'false');
-      } else {
-        submitFormData.append(key, formData[key]);
-      }
-    });
-
-    console.log('📤 Form data being submitted:', Object.fromEntries(submitFormData));
-
-    // Append gallery images as files
-    galleryImages.forEach((imageObj) => {
-      console.log('🖼️ Adding image file:', imageObj.file.name);
-      submitFormData.append('galleryImages', imageObj.file);
-    });
+    // Prepare form data with Base64 images
+    const submitData = {
+      ...formData,
+      galleryImages: galleryImages.map(img => img.base64), // Send Base64 strings
+      existingImages: existingImages // Keep existing Base64 strings
+    };
 
     try {
       const url = editingEvent ? `${API_BASE_URL}/events/${editingEvent.id}` : `${API_BASE_URL}/events`;
       const method = editingEvent ? 'PUT' : 'POST';
 
-      console.log(`📡 Sending ${method} request to:`, url);
-
       const response = await fetch(url, {
         method,
         credentials: 'include',
-        body: submitFormData,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(submitData)
       });
 
       const data = await response.json();
-      console.log('📥 Response:', data);
 
       if (data.success) {
-        alert(`Event ${editingEvent ? 'updated' : 'added'} successfully!`);
-        // Clean up object URLs
-        galleryImages.forEach(image => {
-          if (image.preview) {
-            URL.revokeObjectURL(image.preview);
-          }
-        });
+        toast.success(`Event ${editingEvent ? 'updated' : 'added'} successfully!`);
         handleCloseModal();
         fetchEvents();
       } else {
-        alert(`Error: ${data.error || 'Unknown error'}`);
+        toast.error(`Error: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error saving event:', error);
-      alert(`Failed to ${editingEvent ? 'update' : 'add'} event. Please try again. Error: ${error.message}`);
+      toast.error(`Failed to ${editingEvent ? 'update' : 'add'} event. Please try again.`);
     } finally {
       setModalLoading(false);
     }
@@ -408,29 +466,6 @@ const ManageBookEvents = () => {
     return `${formatDateForDisplay(startDate)} - ${formatDateForDisplay(endDate)}`;
   };
 
-  // Get image URL for display
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    
-    // If it's already a full URL, return as-is
-    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-      return imagePath;
-    }
-    
-    // If it starts with /uploads/, prepend the base URL
-    if (imagePath.startsWith('/uploads/')) {
-      return `${IMAGE_BASE_URL}${imagePath}`;
-    }
-    
-    // If it's just a filename, assume it's in uploads/events
-    if (imagePath.includes('.jpg') || imagePath.includes('.jpeg') || imagePath.includes('.png') || 
-        imagePath.includes('.gif') || imagePath.includes('.webp')) {
-      return `${IMAGE_BASE_URL}/uploads/events/${imagePath}`;
-    }
-    
-    return null;
-  };
-
   // Loading state
   if (loading && events.length === 0) {
     return (
@@ -442,16 +477,18 @@ const ManageBookEvents = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <Toaster position="top-right" />
+      
       {/* Header and Add Button */}
       <div className="mb-8">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Manage Book Events</h1>
-            <p className="text-gray-600">Add, edit, and manage book events</p>
+            <p className="text-gray-600">Add, edit, and manage book events with image support</p>
           </div>
           <button
             onClick={handleAddEvent}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200 flex items-center gap-2"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200 flex items-center gap-2 shadow-md"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
@@ -469,6 +506,7 @@ const ManageBookEvents = () => {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleApplyFilters()}
                 placeholder="Search by title, author, or location"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -555,15 +593,14 @@ const ManageBookEvents = () => {
               ) : (
                 events.map((event) => {
                   const firstImage = event.gallery_images?.[0] || null;
-                  const imageUrl = getImageUrl(firstImage);
                   
                   return (
-                    <tr key={event.id} className="hover:bg-gray-50">
+                    <tr key={event.id} className="hover:bg-gray-50 transition duration-150">
                       <td className="px-6 py-4">
                         <div className="flex items-center">
-                          {imageUrl ? (
+                          {firstImage ? (
                             <img
-                              src={imageUrl}
+                              src={firstImage}
                               alt={event.title}
                               className="h-12 w-12 rounded-lg object-cover mr-4"
                               onError={(e) => {
@@ -618,7 +655,7 @@ const ManageBookEvents = () => {
                         <div className="flex space-x-2">
                           <button
                             onClick={() => handleEditEvent(event)}
-                            className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
+                            className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition duration-150"
                             title="Edit"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -627,7 +664,7 @@ const ManageBookEvents = () => {
                           </button>
                           <button
                             onClick={() => handleDeleteEvent(event.id)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50"
+                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition duration-150"
                             title="Delete"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -649,27 +686,17 @@ const ManageBookEvents = () => {
       {showModal && (
         <>
           {/* Background Overlay */}
-          <div className="fixed inset-0 bg-gray-500/75 z-40"></div>
+          <div className="fixed inset-0 bg-gray-500/75 z-40" onClick={handleCloseModal}></div>
           
           {/* Modal Content */}
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex min-h-screen items-center justify-center p-4">
-              <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl">
+              <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
                 <form onSubmit={handleSubmit}>
                   <div className="p-6">
                     <h3 className="text-2xl font-semibold text-gray-900 mb-6">
                       {editingEvent ? 'Edit Event' : 'Add New Event'}
                     </h3>
-                    
-                    {/* Debug info */}
-                    <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm text-blue-700">
-                        Editing Event ID: {editingEvent?.id} | 
-                        Start Date: {formData.startDate} | 
-                        End Date: {formData.endDate} | 
-                        Existing Images: {existingImages.length}
-                      </p>
-                    </div>
                     
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -822,7 +849,7 @@ const ManageBookEvents = () => {
                       {/* Gallery Images */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Event Gallery Images
+                          Event Gallery Images (Max 10 images, 2MB each)
                         </label>
                         <div 
                           className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors duration-200"
@@ -846,14 +873,14 @@ const ManageBookEvents = () => {
                             <div>
                               <label 
                                 htmlFor="image-upload" 
-                                className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium inline-block"
+                                className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium inline-block transition duration-200"
                               >
                                 Select Images
                                 <input
                                   id="image-upload"
                                   type="file"
                                   multiple
-                                  accept="image/*"
+                                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                                   onChange={handleImageUpload}
                                   className="hidden"
                                 />
@@ -863,7 +890,7 @@ const ManageBookEvents = () => {
                               </p>
                             </div>
                             <p className="text-xs text-gray-500">
-                              PNG, JPG, GIF, WEBP up to 10MB each. Max 10 images.
+                              PNG, JPG, GIF, WEBP up to 2MB each. Images will be automatically compressed.
                             </p>
                           </div>
                         </div>
@@ -872,26 +899,22 @@ const ManageBookEvents = () => {
                         {(existingImages.length > 0 || galleryImages.length > 0) && (
                           <div className="mt-4">
                             <h4 className="text-sm font-medium text-gray-700 mb-2">
-                              Event Images ({existingImages.length + galleryImages.length})
+                              Event Images ({existingImages.length + galleryImages.length} / 10)
                             </h4>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                               {/* Existing Images */}
-                              {existingImages.map((image, index) => (
+                              {existingImages.map((imageBase64, index) => (
                                 <div key={`existing-${index}`} className="relative group">
                                   <img
-                                    src={image}
+                                    src={imageBase64}
                                     alt={`Event ${index + 1}`}
                                     className="w-full h-32 object-cover rounded-lg"
-                                    onError={(e) => {
-                                      e.target.onerror = null;
-                                      e.target.src = `https://via.placeholder.com/150/3B82F6/FFFFFF?text=Image+${index + 1}`;
-                                    }}
                                   />
                                   {editingEvent && (
                                     <button
                                       type="button"
-                                      onClick={() => handleRemoveExistingImage(image)}
-                                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                      onClick={() => handleRemoveExistingImage(index)}
+                                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
                                     >
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -905,14 +928,14 @@ const ManageBookEvents = () => {
                               {galleryImages.map((image, index) => (
                                 <div key={`new-${index}`} className="relative group">
                                   <img
-                                    src={image.preview}
+                                    src={image.base64}
                                     alt={`New ${index + 1}`}
                                     className="w-full h-32 object-cover rounded-lg"
                                   />
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveNewImage(index)}
-                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
                                   >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -960,18 +983,18 @@ const ManageBookEvents = () => {
                   </div>
                   
                   {/* Modal Footer */}
-                  <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+                  <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 rounded-b-lg">
                     <button
                       type="button"
                       onClick={handleCloseModal}
-                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition duration-200"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={modalLoading}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition duration-200"
                     >
                       {modalLoading && (
                         <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">

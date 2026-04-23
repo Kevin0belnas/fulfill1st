@@ -22,6 +22,9 @@ const BookEvents = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [showLightbox, setShowLightbox] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   // Compact theme palette
   const theme = {
@@ -95,6 +98,7 @@ const BookEvents = () => {
       }
     } catch (error) {
       console.error('Error fetching events:', error);
+      showNotification('Failed to load events. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -137,17 +141,26 @@ const BookEvents = () => {
     });
   };
 
+  // Enhanced getImageUrl function to handle Base64
   const getImageUrl = (imagePath) => {
     if (!imagePath) return '';
     
-    if (imagePath.startsWith('http://') || imagePath.startsWith('https://') || imagePath.startsWith('data:')) {
+    // Handle Base64 images (starts with data:image)
+    if (imagePath.startsWith('data:image')) {
       return imagePath;
     }
     
+    // Handle full URLs
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return imagePath;
+    }
+    
+    // Handle paths starting with /uploads/
     if (imagePath.startsWith('/uploads/')) {
       return `${IMAGE_BASE_URL}${imagePath}`;
     }
     
+    // Handle just filenames
     if (imagePath.includes('.jpg') || imagePath.includes('.jpeg') || imagePath.includes('.png') || 
         imagePath.includes('.gif') || imagePath.includes('.webp')) {
       const filename = imagePath.split('/').pop();
@@ -169,101 +182,120 @@ const BookEvents = () => {
     setActiveImageIndex(0);
   };
 
+  const openLightbox = (images, index) => {
+    setLightboxImages(images);
+    setLightboxIndex(index);
+    setShowLightbox(true);
+  };
+
+  const closeLightbox = () => {
+    setShowLightbox(false);
+    setLightboxImages([]);
+    setLightboxIndex(0);
+  };
+
+  const navigateLightbox = (direction) => {
+    const newIndex = lightboxIndex + direction;
+    if (newIndex >= 0 && newIndex < lightboxImages.length) {
+      setLightboxIndex(newIndex);
+    }
+  };
 
   const handleRegister = async (eventId) => {
-  const event = events.find(e => e.id === eventId);
-  if (!event) {
-    showNotification('Event not found', 'error');
-    return;
-  }
-  
-  if (event.status === 'Past') {
-    showNotification('This event has already ended', 'error');
-    return;
-  }
-  
-  // Check if already registered (you could store in localStorage)
-  const existingReg = localStorage.getItem(`event_reg_${eventId}`);
-  if (existingReg) {
-    showNotification('You are already registered for this event', 'info');
-    return;
-  }
-  
-  // Simple modal for registration (you can use a proper modal component)
-  const name = prompt('Enter your name:');
-  if (!name) return;
-  
-  const email = prompt('Enter your email:');
-  if (!email) return;
-  
-  // Basic email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    showNotification('Please enter a valid email address', 'error');
-    return;
-  }
-  
-  const phone = prompt('Phone number (optional):');
-  const notes = prompt('Any notes or special requests (optional):');
-  
-  try {
-    setLoading(true);
-    
-    const response = await fetch(`${API_BASE_URL}/events/${eventId}/register`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        name, 
-        email, 
-        phone: phone || '', 
-        notes: notes || '' 
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (data.success) {
-      // Store registration in localStorage
-      localStorage.setItem(`event_reg_${eventId}`, JSON.stringify({
-        name,
-        email,
-        registeredAt: new Date().toISOString()
-      }));
-      
-      showNotification(`Successfully registered for "${event.title}"!`, 'success');
-      
-      // Refresh events to update attendee count
-      fetchEvents();
-      fetchStats();
-    } else {
-      showNotification(data.error || 'Registration failed', 'error');
+    const event = events.find(e => e.id === eventId);
+    if (!event) {
+      showNotification('Event not found', 'error');
+      return;
     }
-  } catch (error) {
-    console.error('Registration error:', error);
-    showNotification('Registration not available. Please try again later.', 'error');
-  } finally {
-    setLoading(false);
-  }
-};
+    
+    if (event.status === 'Past') {
+      showNotification('This event has already ended', 'error');
+      return;
+    }
+    
+    // Check if already registered
+    const existingReg = localStorage.getItem(`event_reg_${eventId}`);
+    if (existingReg) {
+      showNotification('You are already registered for this event', 'info');
+      return;
+    }
+    
+    // Create a custom modal for registration instead of using prompt
+    const name = prompt('Enter your name:');
+    if (!name) return;
+    
+    const email = prompt('Enter your email:');
+    if (!email) return;
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      showNotification('Please enter a valid email address', 'error');
+      return;
+    }
+    
+    const phone = prompt('Phone number (optional):');
+    const notes = prompt('Any notes or special requests (optional):');
+    
+    try {
+      setLoading(true);
+      
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}/register`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          name, 
+          email, 
+          phone: phone || '', 
+          notes: notes || '' 
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Store registration in localStorage
+        localStorage.setItem(`event_reg_${eventId}`, JSON.stringify({
+          name,
+          email,
+          registeredAt: new Date().toISOString()
+        }));
+        
+        showNotification(`Successfully registered for "${event.title}"!`, 'success');
+        
+        // Refresh events to update attendee count
+        fetchEvents();
+        fetchStats();
+      } else {
+        showNotification(data.error || 'Registration failed', 'error');
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      showNotification('Registration not available. Please try again later.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-// Add this helper function for notifications
-const showNotification = (message, type = 'info') => {
-  // You can use your existing toast system or create a simple alert
-  const toast = document.createElement('div');
-  toast.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg ${
-    type === 'success' ? 'bg-emerald-500 text-white' :
-    type === 'error' ? 'bg-rose-500 text-white' :
-    'bg-emerald-600 text-white'
-  }`;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  
-  setTimeout(() => {
-    toast.remove();
-  }, 3000);
-};
+  // Helper function for notifications
+  const showNotification = (message, type = 'info') => {
+    const toast = document.createElement('div');
+    toast.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg animate-slide-in ${
+      type === 'success' ? 'bg-emerald-500 text-white' :
+      type === 'error' ? 'bg-rose-500 text-white' :
+      'bg-emerald-600 text-white'
+    }`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  };
 
   if (loading && events.length === 0) {
     return (
@@ -367,7 +399,11 @@ const showNotification = (message, type = 'info') => {
               </select>
               <button
                 onClick={() => setShowPastEvents(!showPastEvents)}
-                className={`px-3 py-2.5 rounded-lg text-sm font-medium ${showPastEvents ? 'bg-emerald-100 text-emerald-800' : `${theme.gradient.primary} text-white`}`}
+                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  showPastEvents 
+                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
+                    : `${theme.gradient.primary} text-white hover:shadow-md`
+                }`}
               >
                 {showPastEvents ? 'Hide Past' : 'Show Past'}
               </button>
@@ -393,35 +429,29 @@ const showNotification = (message, type = 'info') => {
                   <div 
                     key={event.id}
                     onClick={() => handleCardClick(event)}
-                    className={`${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 overflow-hidden border ${theme.border.light} group-hover:border-emerald-300/50 group cursor-pointer`}
+                    className={`${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 overflow-hidden border ${theme.border.light} group cursor-pointer transform hover:-translate-y-1`}
                   >
-                    {/* FIXED: Image container with fixed aspect ratio */}
+                    {/* Image container */}
                     <div className="relative h-40 overflow-hidden bg-gradient-to-r from-emerald-400 to-green-500">
                       {firstImage ? (
                         <div className="relative w-full h-full flex items-center justify-center p-2">
                           <img
                             src={firstImage}
                             alt={event.title}
-                            className="max-w-full max-h-full object-contain"
+                            className="max-w-full max-h-full object-contain transition-transform duration-300 group-hover:scale-105"
                             style={{ maxHeight: '100%', maxWidth: '100%' }}
                             onError={(e) => {
                               e.target.onerror = null;
                               e.target.style.display = 'none';
                               const parent = e.target.parentElement;
-                              parent.innerHTML = `
-                                <div class="flex flex-col items-center justify-center w-full h-full">
-                                  <span class="text-3xl text-white mb-1">📚</span>
-                                  <span class="text-xs text-white/80">${event.event_type}</span>
-                                </div>
-                              `;
-                            }}
-                            onLoad={(e) => {
-                              // Add loading animation
-                              e.target.style.opacity = '0';
-                              setTimeout(() => {
-                                e.target.style.transition = 'opacity 0.3s ease-in';
-                                e.target.style.opacity = '1';
-                              }, 10);
+                              if (parent) {
+                                parent.innerHTML = `
+                                  <div class="flex flex-col items-center justify-center w-full h-full">
+                                    <span class="text-3xl text-white mb-1">📚</span>
+                                    <span class="text-xs text-white/80">${event.event_type}</span>
+                                  </div>
+                                `;
+                              }
                             }}
                           />
                         </div>
@@ -462,11 +492,17 @@ const showNotification = (message, type = 'info') => {
                       </div>
                       
                       <div className="flex justify-between items-center text-xs">
-                        <span className={`px-2 py-0.5 rounded ${event.status === 'Upcoming' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800'}`}>
+                        <span className={`px-2 py-0.5 rounded ${
+                          event.status === 'Upcoming' 
+                            ? 'bg-emerald-100 text-emerald-800' 
+                            : event.status === 'Ongoing'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
                           {event.status || 'Unknown'}
                         </span>
                         <span className="text-emerald-600 group-hover:text-emerald-700 transition-colors">
-                          View →
+                          View Details →
                         </span>
                       </div>
                     </div>
@@ -484,12 +520,6 @@ const showNotification = (message, type = 'info') => {
               {showPastEvents ? 'All Events' : 'Upcoming Events'}
               <span className="text-sm font-normal text-emerald-600 ml-1">({events.length})</span>
             </h2>
-            <button
-              onClick={() => setShowPastEvents(!showPastEvents)}
-              className={`px-3 py-1.5 text-xs font-medium rounded ${showPastEvents ? 'bg-emerald-100 text-emerald-800' : `${theme.gradient.primary} text-white`}`}
-            >
-              {showPastEvents ? 'Hide Past' : 'Show Past'}
-            </button>
           </div>
           
           {events.length === 0 ? (
@@ -498,8 +528,8 @@ const showNotification = (message, type = 'info') => {
               <h3 className="text-sm font-semibold text-emerald-800 mb-1">No events found</h3>
               <p className="text-xs text-emerald-600 mb-4">
                 {searchTerm || filterType !== 'all' 
-                  ? 'Try changing your search' 
-                  : 'No events available'}
+                  ? 'Try changing your search or filters' 
+                  : 'Check back later for upcoming events'}
               </p>
               <button
                 onClick={() => {
@@ -521,34 +551,29 @@ const showNotification = (message, type = 'info') => {
                   <div 
                     key={event.id}
                     onClick={() => handleCardClick(event)}
-                    className={`${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 overflow-hidden border ${theme.border.light} group-hover:border-emerald-300/50 group cursor-pointer`}
+                    className={`${theme.bg.card} rounded-lg ${theme.shadow.card} hover:${theme.shadow.hover} transition-all duration-300 overflow-hidden border ${theme.border.light} group cursor-pointer transform hover:-translate-y-1`}
                   >
-                    {/* FIXED: Image container with proper aspect ratio handling */}
+                    {/* Image container */}
                     <div className="relative h-36 bg-gradient-to-r from-emerald-400 to-green-500">
                       {firstImage ? (
                         <div className="relative w-full h-full flex items-center justify-center p-2">
                           <img
                             src={firstImage}
                             alt={event.title}
-                            className="max-w-full max-h-full object-contain"
+                            className="max-w-full max-h-full object-contain transition-transform duration-300 group-hover:scale-105"
                             style={{ maxHeight: '100%', maxWidth: '100%' }}
                             onError={(e) => {
                               e.target.onerror = null;
                               e.target.style.display = 'none';
                               const parent = e.target.parentElement;
-                              parent.innerHTML = `
-                                <div class="flex flex-col items-center justify-center w-full h-full">
-                                  <span class="text-2xl text-white mb-0.5">📚</span>
-                                  <span class="text-xs text-white/80">${event.event_type}</span>
-                                </div>
-                              `;
-                            }}
-                            onLoad={(e) => {
-                              e.target.style.opacity = '0';
-                              setTimeout(() => {
-                                e.target.style.transition = 'opacity 0.3s ease-in';
-                                e.target.style.opacity = '1';
-                              }, 10);
+                              if (parent) {
+                                parent.innerHTML = `
+                                  <div class="flex flex-col items-center justify-center w-full h-full">
+                                    <span class="text-2xl text-white mb-0.5">📚</span>
+                                    <span class="text-xs text-white/80">${event.event_type}</span>
+                                  </div>
+                                `;
+                              }
                             }}
                           />
                         </div>
@@ -595,14 +620,18 @@ const showNotification = (message, type = 'info') => {
                       
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-emerald-600">
-                          {event.attendees_count || 10000} attending
+                          {event.attendees_count || 0} attending
                         </span>
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
                             handleRegister(event.id);
                           }}
-                          className={`px-2 py-1 rounded text-xs font-medium ${event.status === 'Past' ? 'bg-gray-100 text-gray-500' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'}`}
+                          className={`px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
+                            event.status === 'Past' 
+                              ? 'bg-gray-100 text-gray-500 cursor-not-allowed' 
+                              : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                          }`}
                           disabled={event.status === 'Past'}
                         >
                           {event.status === 'Past' ? 'Ended' : 'Register'}
@@ -621,20 +650,20 @@ const showNotification = (message, type = 'info') => {
       {showEventModal && selectedEvent && (
         <>
           <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity duration-300"
             onClick={handleCloseModal}
           ></div>
           
           <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-3 mt-10">
+            <div className="flex min-h-full mt-10 items-center justify-center p-3">
               <div 
-                className="relative bg-white rounded-lg shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh]"
+                className="relative bg-white rounded-lg shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh] animate-slide-up"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Close button */}
                 <button
                   onClick={handleCloseModal}
-                  className="absolute top-3 right-3 z-50 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white shadow"
+                  className="absolute top-3 right-3 z-50 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white shadow-md transition-all duration-200 hover:scale-110"
                 >
                   <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -645,29 +674,47 @@ const showNotification = (message, type = 'info') => {
                   {/* Event Details - TOP SECTION */}
                   <div className="p-4">
                     <div className="flex flex-wrap gap-2 mb-4">
-                      <span className={`px-2 py-1 rounded text-xs ${getEventTypeColor(selectedEvent.event_type)}`}>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${getEventTypeColor(selectedEvent.event_type)}`}>
                         {selectedEvent.event_type}
                       </span>
-                      <span className={`px-2 py-1 rounded text-xs ${selectedEvent.status === 'Upcoming' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800'}`}>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        selectedEvent.status === 'Upcoming' 
+                          ? 'bg-emerald-100 text-emerald-800' 
+                          : selectedEvent.status === 'Ongoing'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
                         {selectedEvent.status || 'Unknown'}
                       </span>
+                      {selectedEvent.featured && (
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-gradient-to-r from-emerald-500 to-green-500 text-white">
+                          ⭐ Featured
+                        </span>
+                      )}
                     </div>
                     
-                    <h2 className="text-lg font-bold text-emerald-900 mb-3">{selectedEvent.title}</h2>
+                    <h2 className="text-xl font-bold text-emerald-900 mb-3">{selectedEvent.title}</h2>
                     
                     <div className="space-y-3 mb-4">
                       <div className="flex items-center text-sm text-emerald-800">
                         <svg className="w-4 h-4 mr-2 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                         </svg>
-                        <span>{selectedEvent.author_name}</span>
+                        <span>Presented by: <strong>{selectedEvent.author_name}</strong></span>
                       </div>
                       
-                      <div className="flex items-center text-sm text-emerald-800">
-                        <svg className="w-4 h-4 mr-2 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <div className="flex items-start text-sm text-emerald-800">
+                        <svg className="w-4 h-4 mr-2 mt-0.5 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                         </svg>
-                        <span>{formatFullDate(selectedEvent.start_date)}</span>
+                        <div>
+                          <div>{formatFullDate(selectedEvent.start_date)}</div>
+                          {selectedEvent.end_date && selectedEvent.end_date !== selectedEvent.start_date && (
+                            <div className="text-xs text-emerald-600 mt-1">
+                              to {formatFullDate(selectedEvent.end_date)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="flex items-center text-sm text-emerald-800">
@@ -676,11 +723,25 @@ const showNotification = (message, type = 'info') => {
                         </svg>
                         <span>{selectedEvent.bookstore_location}</span>
                       </div>
+                      
+                      <div className="flex items-start text-sm text-emerald-800">
+                        <svg className="w-4 h-4 mr-2 mt-0.5 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 0l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 000-5.656z" clipRule="evenodd" />
+                        </svg>
+                        <span className="truncate">{selectedEvent.address}</span>
+                      </div>
                     </div>
                     
-                    <div className="text-sm text-emerald-700 mb-6">
+                    <div className="text-sm text-emerald-700 mb-6 leading-relaxed">
                       {selectedEvent.description}
                     </div>
+                    
+                    {selectedEvent.featured_books && (
+                      <div className="mb-6 p-3 bg-emerald-50 rounded-lg border border-emerald-100">
+                        <h4 className="text-sm font-semibold text-emerald-900 mb-2">Featured Books</h4>
+                        <p className="text-sm text-emerald-700">{selectedEvent.featured_books}</p>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Event Gallery - BOTTOM SECTION */}
@@ -694,24 +755,22 @@ const showNotification = (message, type = 'info') => {
                       </div>
                       
                       <div className="grid grid-cols-3 gap-2">
-                        {selectedEvent.gallery_images.slice(0, 5).map((img, index) => {
-                          if (index === 4 && selectedEvent.gallery_images.length > 5) {
+                        {selectedEvent.gallery_images.slice(0, 6).map((img, index) => {
+                          // Show "more" indicator on the 6th image if there are more than 6
+                          if (index === 5 && selectedEvent.gallery_images.length > 6) {
                             return (
                               <div 
                                 key="more"
-                                className="relative aspect-square rounded-lg overflow-hidden bg-gradient-to-r from-emerald-400 to-green-500 flex items-center justify-center group cursor-pointer"
-                                onClick={() => {
-                                  // You could open a full gallery view here
-                                  alert(`Viewing all ${selectedEvent.gallery_images.length} images`);
-                                }}
+                                className="relative aspect-square rounded-lg overflow-hidden bg-gradient-to-r from-emerald-400 to-green-500 flex items-center justify-center group cursor-pointer transform hover:scale-105 transition-transform duration-200"
+                                onClick={() => openLightbox(selectedEvent.gallery_images, 5)}
                               >
-                                <div className="text-center">
-                                  <div className="text-white text-lg font-bold mb-1">
-                                    +{selectedEvent.gallery_images.length - 4}
+                                <div className="text-center z-10">
+                                  <div className="text-white text-xl font-bold mb-1">
+                                    +{selectedEvent.gallery_images.length - 5}
                                   </div>
-                                  <div className="text-white/80 text-xs">View All</div>
+                                  <div className="text-white/90 text-xs">View All</div>
                                 </div>
-                                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors"></div>
+                                <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors"></div>
                               </div>
                             );
                           }
@@ -719,39 +778,103 @@ const showNotification = (message, type = 'info') => {
                           return (
                             <div 
                               key={index}
-                              className="relative aspect-square rounded-lg overflow-hidden bg-emerald-100 group cursor-pointer"
-                              onClick={() => {
-                                // Open image in lightbox or larger view
-                                window.open(img, '_blank');
-                              }}
+                              className="relative aspect-square rounded-lg overflow-hidden bg-emerald-100 group cursor-pointer transform hover:scale-105 transition-transform duration-200"
+                              onClick={() => openLightbox(selectedEvent.gallery_images, index)}
                             >
                               <img
                                 src={img}
                                 alt={`Event image ${index + 1}`}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                                 onError={(e) => {
                                   e.target.onerror = null;
                                   e.target.style.display = 'none';
                                   const parent = e.target.parentElement;
-                                  parent.innerHTML = `
-                                    <div class="w-full h-full flex items-center justify-center">
-                                      <span class="text-2xl text-emerald-600">📷</span>
-                                    </div>
-                                  `;
+                                  if (parent) {
+                                    parent.innerHTML = `
+                                      <div class="w-full h-full flex items-center justify-center">
+                                        <span class="text-3xl text-emerald-600">📷</span>
+                                      </div>
+                                    `;
+                                  }
                                 }}
                               />
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
-                              <div className="absolute bottom-1 right-1 bg-black/50 text-white text-xs px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                {index + 1}
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors"></div>
+                              <div className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                {index + 1}/{selectedEvent.gallery_images.length}
                               </div>
                             </div>
                           );
                         })}
-                        
                       </div>
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Lightbox Modal for Fullscreen Image View */}
+      {showLightbox && lightboxImages.length > 0 && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/90 z-50"
+            onClick={closeLightbox}
+          ></div>
+          
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="relative max-w-5xl w-full mx-4">
+              {/* Close button */}
+              <button
+                onClick={closeLightbox}
+                className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              
+              {/* Main image */}
+              <div className="relative">
+                <img
+                  src={lightboxImages[lightboxIndex]}
+                  alt={`Full size image ${lightboxIndex + 1}`}
+                  className="w-full h-auto max-h-[80vh] object-contain"
+                />
+                
+                {/* Navigation buttons */}
+                {lightboxImages.length > 1 && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateLightbox(-1);
+                      }}
+                      className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-colors"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateLightbox(1);
+                      }}
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-colors"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+              
+              {/* Image counter */}
+              <div className="text-center mt-4 text-white text-sm">
+                {lightboxIndex + 1} / {lightboxImages.length}
               </div>
             </div>
           </div>
