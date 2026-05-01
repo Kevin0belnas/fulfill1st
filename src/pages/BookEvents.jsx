@@ -824,13 +824,25 @@ const BookEvents = () => {
           ></div>
           
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="relative max-w-5xl w-full mx-4">
-              {/* Close button */}
+            <div className="relative max-w-5xl w-full mx-4 mt-10">
+              {/* Close button - Top right corner with better visibility */}
               <button
                 onClick={closeLightbox}
-                className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
+                className="absolute -top-12 right-0 md:-top-14 md:right-0 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white rounded-full p-2 transition-all duration-200 hover:scale-110 z-10"
+                aria-label="Close lightbox"
               >
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              
+              {/* Alternative: Close button floating on top of image */}
+              <button
+                onClick={closeLightbox}
+                className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white rounded-full p-2 transition-all duration-200 hover:scale-110 z-20"
+                aria-label="Close lightbox"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>

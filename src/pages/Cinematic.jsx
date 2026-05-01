@@ -51,6 +51,36 @@ const Cinematic = () => {
       duration: '7:36',
       uploadDate: '2026',
     },
+    {
+      id: 4,
+      title: 'Heart of Always',
+      description: 'The Heart of Always, the second book of The Heart Trilogy, the balance of power between good and evil teeters on the edge.',
+      author: 'David Michael Ruiz',
+      fileId: '1jVxLE1UdlMWv2uiFiVXyd7Hda0S07UZQ', // Your Kakaki file ID
+      category: 'Short Film',
+      duration: '1:00',
+      uploadDate: '2025',
+    },
+    {
+      id: 5,
+      title: 'Heart of Jerim',
+      description: 'In the Third Kingdom, young Jerim lives a carefree life, more interested in explosions and mischief than in his familys prestigious legacy as master weapon makers. Orphaned at a young age, he knows l',
+      author: 'David Michael Ruiz',
+      fileId: '1X5vzIhEfapGtRW-5_Jk2mCdF0AXSicnP', // Your Kakaki file ID
+      category: 'Short Film',
+      duration: '1:00',
+      uploadDate: '2025',
+    },
+    {
+      id: 6,
+      title: 'Heart of Tesfa',
+      description: 'In a world forged by ancient powers, where good and evil clash in both the hearts of men and mythical creatures, the war for the soul of creation intensifies.',
+      author: 'David Michael Ruiz',
+      fileId: '1qFfSIKvgH29fQ4FP7vNBT0anTcLePgKv', // Your Kakaki file ID
+      category: 'Short Film',
+      duration: '1:00',
+      uploadDate: '2025',
+    }
   ];
 
   useEffect(() => {

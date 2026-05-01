@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaSearch, FaUserCircle, FaEnvelope, FaPaperPlane, FaSignOutAlt, FaEllipsisV, FaRobot, FaBell, FaRegSmile, FaPaperclip, FaCog, FaHistory, FaUsers, FaCheck, FaCheckDouble } from 'react-icons/fa';
+import { FaSearch, FaUserCircle, FaEnvelope, FaPaperPlane, FaSignOutAlt, FaEllipsisV, FaRobot, FaBell, FaRegSmile, FaPaperclip, FaCog, FaHistory, FaUsers, FaCheck, FaCheckDouble, FaCamera, FaTimes, FaMars, FaVenus, FaMale } from 'react-icons/fa';
 import { IoMdSend, IoMdClose } from 'react-icons/io';
 import { HiOutlineEmojiHappy } from 'react-icons/hi';
 import { useNavigate } from 'react-router-dom';
-
 
 const ENV_CONFIG = {
   development: {
@@ -14,11 +13,12 @@ const ENV_CONFIG = {
   }
 };
 
-
 const currentEnv = import.meta.env.MODE || 'development';
 const config = ENV_CONFIG[currentEnv];
 
 const AgentChat = () => {
+  const navigate = useNavigate();
+
   const [activeChats, setActiveChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [message, setMessage] = useState('');
@@ -26,9 +26,14 @@ const AgentChat = () => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [notification, setNotification] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+  const [avatarType, setAvatarType] = useState('male');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const messagesEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
@@ -38,41 +43,71 @@ const AgentChat = () => {
   let pollIntervalRef = useRef(null);
 
   const apiCall = async (endpoint, options = {}) => {
-  const token = localStorage.getItem('auth_token');
-  const url = `${config.apiBaseUrl}${endpoint}`;
-  const defaultOptions = {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { 'Authorization': `Bearer ${token}` })
-    },
-  };
-  
-  try {
+    const url = `${config.apiBaseUrl}${endpoint}`;
+    const defaultOptions = {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    };
+    
     const response = await fetch(url, { ...defaultOptions, ...options });
     const data = await response.json();
-    
-    if (response.status === 401) {
-      // Token expired or invalid - logout automatically
-      localStorage.clear();
-      sessionStorage.clear();
-      window.location.href = '/login';
-      throw new Error('Session expired. Please login again.');
-    }
     
     if (!response.ok) {
       throw new Error(data.error || 'Something went wrong');
     }
     
     return data;
-  } catch (error) {
-    if (error.message === 'Failed to fetch') {
-      throw new Error('Network error. Please check your connection.');
-    }
-    throw error;
-  }
-};
+  };
 
-  const navigate = useNavigate();
+  // Session check on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await apiCall('/auth/check');
+        if (!response.success) {
+          navigate('/login');
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        navigate('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [navigate]);
+
+  // Load profile from backend
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!user) return;
+      
+      try {
+        const response = await apiCall('/agent/profile');
+        if (response.success && response.data) {
+          if (response.data.profile_image) {
+            setProfileImage(response.data.profile_image);
+            setAvatarType(null);
+          } else if (response.data.avatar_type) {
+            setAvatarType(response.data.avatar_type);
+            setProfileImage(null);
+          } else {
+            setAvatarType('male');
+          }
+        }
+      } catch (error) {
+        console.error('Error loading profile:', error);
+        const savedImage = localStorage.getItem('agent_profile_image');
+        if (savedImage) {
+          setProfileImage(savedImage);
+          setAvatarType(null);
+        }
+      }
+    };
+    
+    loadProfile();
+  }, [user]);
 
   const showNotification = (email, messageText) => {
     setNotification({ 
@@ -82,7 +117,6 @@ const AgentChat = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Helper function to sort messages by timestamp (oldest first)
   const sortMessagesByTime = (messages) => {
     if (!messages || !Array.isArray(messages)) return [];
     return [...messages].sort((a, b) => {
@@ -103,7 +137,7 @@ const AgentChat = () => {
       } catch (error) {
         console.error('Error fetching current agent:', error);
         if (error.message?.includes('401')) {
-          window.location.href = '/login';
+          navigate('/login');
         }
       }
     };
@@ -111,7 +145,132 @@ const AgentChat = () => {
     fetchCurrentAgent();
   }, []);
 
-  // Fetch conversations - FIXED to properly sort messages
+  // Handle profile image upload
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image size should be less than 2MB');
+      return;
+    }
+
+    setUploadingImage(true);
+
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Image = reader.result;
+        
+        const response = await apiCall('/agent/update-profile', {
+          method: 'PUT',
+          body: JSON.stringify({ profile_image: base64Image })
+        });
+        
+        if (response.success) {
+          setProfileImage(base64Image);
+          setAvatarType(null);
+          localStorage.setItem('agent_profile_image', base64Image);
+          showNotification('Success', 'Profile picture updated!');
+        }
+        
+        setUploadingImage(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      alert('Failed to upload image. Please try again.');
+      setUploadingImage(false);
+    }
+  };
+
+  // Handle avatar icon selection
+  const handleAvatarSelect = async (type) => {
+    setSavingProfile(true);
+    
+    try {
+      const response = await apiCall('/agent/update-profile', {
+        method: 'PUT',
+        body: JSON.stringify({ avatar_type: type })
+      });
+      
+      if (response.success) {
+        setAvatarType(type);
+        setProfileImage(null);
+        localStorage.removeItem('agent_profile_image');
+        showNotification('Success', `Avatar changed to ${type === 'male' ? 'Male' : 'Female'} icon`);
+      }
+    } catch (error) {
+      console.error('Error saving avatar:', error);
+      alert('Failed to save avatar. Please try again.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  // Remove profile image
+  const handleRemoveImage = async () => {
+    setSavingProfile(true);
+    
+    try {
+      const response = await apiCall('/agent/update-profile', {
+        method: 'PUT',
+        body: JSON.stringify({ avatar_type: 'male' })
+      });
+      
+      if (response.success) {
+        setAvatarType('male');
+        setProfileImage(null);
+        localStorage.removeItem('agent_profile_image');
+        showNotification('Success', 'Profile picture removed');
+      }
+    } catch (error) {
+      console.error('Error removing image:', error);
+      alert('Failed to remove image. Please try again.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  // Get avatar display
+  const getAvatarDisplay = () => {
+    if (profileImage) {
+      return <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />;
+    }
+    
+    if (avatarType === 'male') {
+      return (
+        <div className="flex items-center justify-center w-full h-full">
+          <FaMars className="text-3xl" />
+        </div>
+      );
+    }
+    
+    if (avatarType === 'female') {
+      return (
+        <div className="flex items-center justify-center w-full h-full">
+          <FaVenus className="text-3xl" />
+        </div>
+      );
+    }
+    
+    return user?.name?.charAt(0).toUpperCase() || 'A';
+  };
+
+  // Get initials for fallback
+  const getInitials = () => {
+    if (user?.name) {
+      return user.name.charAt(0).toUpperCase();
+    }
+    return 'A';
+  };
+
+  // Fetch conversations
   const fetchConversations = async () => {
     if (!user) return;
     
@@ -138,14 +297,12 @@ const AgentChat = () => {
               const existingMessageIds = new Set(existingConv.messages.map(m => m.id));
               const newMessages = newConv.messages.filter(m => !existingMessageIds.has(m.id));
               
-              // Show notification for new visitor messages (only if not current chat)
               newMessages.forEach(msg => {
                 if (!msg.isAgent && existingConv.chatKey !== selectedChat) {
                   showNotification(newConv.email, msg.message);
                 }
               });
               
-              // Merge and sort messages properly
               const allMessages = sortMessagesByTime([...existingConv.messages, ...newMessages]);
               
               return {
@@ -156,11 +313,9 @@ const AgentChat = () => {
             return newConv;
           });
           
-          // Also keep any chats that are no longer in the response? No, replace
           return mergedChats;
         });
         
-        // Update unread counts
         const unreads = {};
         conversations.forEach(conv => {
           if (conv.unread_count > 0) {
@@ -179,7 +334,6 @@ const AgentChat = () => {
   useEffect(() => {
     fetchConversations();
     
-    // Poll more frequently for real-time updates
     pollIntervalRef.current = setInterval(fetchConversations, 2000);
     
     return () => {
@@ -189,7 +343,6 @@ const AgentChat = () => {
     };
   }, [user, selectedChat]);
 
-  // Mark as read when selecting chat
   const markAsRead = async (chatKey) => {
     try {
       await apiCall(`/agent/conversations/${chatKey}/read`, { method: 'POST' });
@@ -205,7 +358,6 @@ const AgentChat = () => {
     }
   }, [selectedChat]);
 
-  // Send welcome message
   const sendWelcomeMessage = async (chatKey) => {
     if (hasSentWelcomeMessage.current[chatKey] || isWelcomeSendingRef.current[chatKey]) {
       return;
@@ -271,7 +423,6 @@ const AgentChat = () => {
     }
   };
 
-  // Send message - FIXED to maintain correct order
   const handleSendMessage = async () => {
     if (!message.trim() || !selectedChat || !user) return;
     
@@ -300,7 +451,6 @@ const AgentChat = () => {
       isOptimistic: true
     };
     
-    // Optimistic update with proper sorting
     setActiveChats(prevChats => 
       prevChats.map(chatItem => {
         if (chatItem.chatKey === selectedChat) {
@@ -325,20 +475,16 @@ const AgentChat = () => {
       });
 
       if (response.success) {
-        // Replace optimistic message with real one, maintaining order
         setActiveChats(prevChats => 
           prevChats.map(chatItem => {
             if (chatItem.chatKey === selectedChat) {
-              // Remove optimistic message
               const filteredMessages = chatItem.messages.filter(msg => msg.id !== tempId);
-              // Add real message
               const realMessage = { 
                 ...response.data, 
                 isAgent: true, 
                 agent_name: user.name,
                 timestamp: response.data.created_at || now
               };
-              // Sort all messages
               const updatedMessages = sortMessagesByTime([...filteredMessages, realMessage]);
               return { ...chatItem, messages: updatedMessages };
             }
@@ -353,7 +499,6 @@ const AgentChat = () => {
     } catch (error) {
       console.error('Error sending message:', error);
       
-      // Remove the failed optimistic message
       setActiveChats(prevChats => 
         prevChats.map(chatItem => {
           if (chatItem.chatKey === selectedChat) {
@@ -370,22 +515,26 @@ const AgentChat = () => {
     }
   };
 
-  const handleLogout = () => {
-  console.log('Logging out...');
-  
-  // Clear all localStorage
-  localStorage.clear();
-  sessionStorage.clear();
-  
-  // Stop polling
-  if (pollIntervalRef.current) {
-    clearInterval(pollIntervalRef.current);
-    pollIntervalRef.current = null;
-  }
-  
-  // Navigate to login
-  window.location.href = '/login';
-};
+  const handleLogout = async () => {
+    console.log('🔴 Logging out...');
+    
+    try {
+      await apiCall('/auth/logout', { method: 'POST' });
+      console.log('✅ Session destroyed on server');
+    } catch (error) {
+      console.error('Logout API error:', error);
+    }
+    
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    
+    navigate('/login');
+  };
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -434,12 +583,9 @@ const AgentChat = () => {
   const currentChat = activeChats.find(chat => chat.chatKey === selectedChat);
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 
-  // Group messages by date - ensure proper order
   const groupMessagesByDate = (messages) => {
     if (!messages || !Array.isArray(messages)) return {};
     const groups = {};
-    
-    // Make sure messages are sorted before grouping
     const sortedMessages = sortMessagesByTime(messages);
     
     sortedMessages.forEach(message => {
@@ -454,7 +600,6 @@ const AgentChat = () => {
 
   const groupedMessages = groupMessagesByDate(currentChat?.messages || []);
 
-  // Auto-scroll when messages change
   useEffect(() => {
     if (shouldAutoScrollRef.current) {
       scrollToBottom();
@@ -505,6 +650,155 @@ const AgentChat = () => {
         </div>
       )}
 
+      {/* Profile Modal */}
+      {showProfileModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowProfileModal(false);
+            }
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-auto overflow-hidden transform transition-all duration-200 scale-100 max-h-[90vh] flex flex-col">
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-3 flex items-center justify-between flex-shrink-0">
+              <h3 className="text-white font-bold text-base">Profile Settings</h3>
+              <button 
+                onClick={() => setShowProfileModal(false)}
+                className="text-white/80 hover:text-white transition-colors"
+              >
+                <FaTimes className="text-lg" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto flex-1">
+              {/* Avatar Preview */}
+              <div className="flex flex-col items-center mb-4">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden">
+                  {profileImage ? (
+                    <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
+                  ) : avatarType === 'male' ? (
+                    <FaMars className="text-4xl" />
+                  ) : avatarType === 'female' ? (
+                    <FaVenus className="text-4xl" />
+                  ) : (
+                    getInitials()
+                  )}
+                </div>
+              </div>
+
+              {/* Avatar Type Selection */}
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-700 mb-2">Choose Avatar</label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleAvatarSelect('male')}
+                    className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all ${
+                      avatarType === 'male' && !profileImage
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-slate-200 hover:border-blue-300'
+                    }`}
+                    disabled={savingProfile}
+                  >
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white">
+                      <FaMale className="text-2xl" />
+                    </div>
+                    <span className="text-xs font-medium text-slate-700">Male</span>
+                    {avatarType === 'male' && !profileImage && (
+                      <div className="text-[10px] text-blue-500">Selected</div>
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={() => handleAvatarSelect('female')}
+                    className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all ${
+                      avatarType === 'female' && !profileImage
+                        ? 'border-pink-500 bg-pink-50'
+                        : 'border-slate-200 hover:border-pink-300'
+                    }`}
+                    disabled={savingProfile}
+                  >
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-white">
+                      <FaVenus className="text-2xl" />
+                    </div>
+                    <span className="text-xs font-medium text-slate-700">Female</span>
+                    {avatarType === 'female' && !profileImage && (
+                      <div className="text-[10px] text-pink-500">Selected</div>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Upload Photo Option */}
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-700 mb-2">Upload Photo</label>
+                <div className="flex items-center gap-2">
+                  <label className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all cursor-pointer text-sm">
+                    <FaCamera className="text-xs" />
+                    <span>Choose Image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      disabled={uploadingImage}
+                    />
+                  </label>
+                  {(profileImage || (!profileImage && avatarType !== 'male')) && (
+                    <button
+                      onClick={handleRemoveImage}
+                      className="px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all text-sm"
+                      disabled={savingProfile}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                {uploadingImage && (
+                  <div className="mt-1 text-xs text-blue-500 flex items-center gap-1">
+                    <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    Uploading...
+                  </div>
+                )}
+                {savingProfile && !uploadingImage && (
+                  <div className="mt-1 text-xs text-blue-500 flex items-center gap-1">
+                    <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    Saving...
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Square image, max 2MB (JPG, PNG, GIF)
+                </p>
+              </div>
+
+              {/* Agent Info */}
+              <div className="space-y-3 pt-3 border-t border-slate-200">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-0.5">Name</label>
+                  <div className="text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg text-sm">{user?.name}</div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-0.5">Email</label>
+                  <div className="text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg text-sm break-all">{user?.email}</div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-0.5">Role</label>
+                  <div className="text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg text-sm capitalize">{user?.role}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 pt-2 border-t border-slate-200 flex-shrink-0">
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all font-medium text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Sidebar */}
       <div className="w-96 bg-white/80 backdrop-blur-xl border-r border-slate-200/60 flex flex-col shadow-xl">
         <div className="p-6 border-b border-slate-200/60">
@@ -518,30 +812,35 @@ const AgentChat = () => {
           
           <div className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50 to-blue-50/50 rounded-2xl border border-slate-200/60">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 text-white rounded-xl flex items-center justify-center font-semibold text-lg shadow-lg">
-                {user?.name?.charAt(0).toUpperCase() || 'A'}
+              <div 
+                className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 text-white rounded-xl flex items-center justify-center font-semibold text-lg shadow-lg cursor-pointer overflow-hidden"
+                onClick={() => setShowProfileModal(true)}
+              >
+                {getAvatarDisplay()}
               </div>
-              <div><div className="font-semibold text-slate-800">{user?.name || 'Agent'}</div><div className="text-xs text-slate-500">{user?.email}</div></div>
+              <div>
+                <div className="font-semibold text-slate-800">{user?.name || 'Agent'}</div>
+                <div className="text-xs text-slate-500">{user?.email}</div>
+              </div>
             </div>
             <div className="relative">
               <button className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-all shadow-sm" onClick={() => setShowUserMenu(!showUserMenu)}>
                 <FaEllipsisV className="text-sm" />
               </button>
               {showUserMenu && (
-  <div className="absolute top-full right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-2xl py-2 z-50 min-w-40">
-    <button 
-      onClick={() => {
-        console.log('🔴 LOGOUT BUTTON CLICKED!'); // Add this first
-        setShowUserMenu(false);
-        handleLogout();
-      }} 
-      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-    >
-      <FaSignOutAlt className="text-slate-400 text-xs" /> 
-      Logout
-    </button>
-  </div>
-)}
+                <div className="absolute top-full right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-2xl py-2 z-50 min-w-40">
+                  <button 
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowProfileModal(true);
+                    }} 
+                    className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <FaCog className="text-slate-400 text-xs" /> 
+                    Profile Settings
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -631,13 +930,50 @@ const AgentChat = () => {
             </div>
           )}
         </div>
+
+        {/* Footer with Logout Button */}
+        <div className="p-4 border-t border-slate-200/60 bg-white/50">
+          <button 
+            onClick={async () => {
+              console.log('🔴 LOGOUT BUTTON CLICKED IN FOOTER!');
+              
+              try {
+                const response = await fetch(`${config.apiBaseUrl}/auth/logout`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  credentials: 'include',
+                });
+                
+                const data = await response.json();
+                console.log('✅ Logout response:', data);
+              } catch (error) {
+                console.error('❌ Logout error:', error);
+              }
+              
+              localStorage.clear();
+              sessionStorage.clear();
+              
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+              
+              navigate('/login');
+            }} 
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-red-50 to-red-100 hover:from-red-100 hover:to-red-200 text-red-600 rounded-xl transition-all duration-200 border border-red-200 hover:border-red-300 group"
+          >
+            <FaSignOutAlt className="text-red-500 text-sm group-hover:scale-110 transition-transform" />
+            <span className="font-medium text-sm">Sign Out</span>
+          </button>
+        </div>
       </div>
 
-      {/* Main Chat Area - Messenger Style */}
+      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col bg-white/60 backdrop-blur-sm">
         {selectedChat && currentChat ? (
           <>
-            {/* Chat Header */}
             <div className="p-4 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm">
               <div className="flex items-center gap-4">
                 <div className="relative">
@@ -656,7 +992,6 @@ const AgentChat = () => {
               </div>
             </div>
 
-            {/* Messages Area */}
             <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 bg-gradient-to-b from-slate-50/50 to-blue-50/30">
               {currentChat.messages?.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400 text-center">
@@ -720,8 +1055,16 @@ const AgentChat = () => {
                               )}
                             </div>
                             {isAgent && (
-                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-semibold ml-2 flex-shrink-0">
-                                {user?.name?.charAt(0).toUpperCase() || 'A'}
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-semibold ml-2 flex-shrink-0 overflow-hidden">
+                                {profileImage ? (
+                                  <img src={profileImage} alt="Agent" className="w-full h-full object-cover" />
+                                ) : avatarType === 'male' ? (
+                                  <FaMars className="text-base" />
+                                ) : avatarType === 'female' ? (
+                                  <FaVenus className="text-base" />
+                                ) : (
+                                  user?.name?.charAt(0).toUpperCase() || 'A'
+                                )}
                               </div>
                             )}
                           </div>
@@ -734,7 +1077,6 @@ const AgentChat = () => {
               )}
             </div>
 
-            {/* Input Area */}
             <div className="p-4 border-t border-slate-200/60 bg-white/80 backdrop-blur-sm">
               <div className="flex items-end gap-2 bg-white rounded-2xl p-2 border border-slate-200 shadow-sm">
                 <button className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-all">
@@ -794,8 +1136,6 @@ const AgentChat = () => {
           </div>
         )}
       </div>
-
-      {showUserMenu && <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />}
 
       <style>{`
         @keyframes slide-in {
