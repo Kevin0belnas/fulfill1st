@@ -1,7 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import { createGlobalStyle } from 'styled-components';
 import ScrollToTop from './components/ScrollToTop'; // ADD THIS IMPORT
-
+import { useState, useEffect } from 'react'; // ADD THIS
+import FlashVideo from './components/FlashVideo'; // ADD THIS
 
 // Import all components
  import Navbar from './components/Navbar';
@@ -85,11 +86,30 @@ const NoNavbarLayout = () => (
 );
 
 export default function App() {
+
+  const [showFlash, setShowFlash] = useState(true);
+
+  // Optional: Check if flash has been shown in this session
+  useEffect(() => {
+    const hasSeenFlash = sessionStorage.getItem('hasSeenFlash');
+    if (hasSeenFlash) {
+      setShowFlash(false);
+    }
+  }, []);
+
+  const handleFlashComplete = () => {
+    setShowFlash(false);
+    sessionStorage.setItem('hasSeenFlash', 'true');
+  };
+
+
   return (
     <>
       <GlobalStyle />
       <Router>
                 <ScrollToTop /> {/* ADD THIS LINE - MUST be inside Router */}
+
+                 {showFlash && <FlashVideo onComplete={handleFlashComplete} />}
 
         <Routes>
           {/* Routes WITH Navbar */}
