@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Outlet, useLocation } from 'react-router-dom';
 import { createGlobalStyle } from 'styled-components';
 import ScrollToTop from './components/ScrollToTop'; // ADD THIS IMPORT
 import { useState, useEffect } from 'react'; // ADD THIS
@@ -85,22 +85,37 @@ const NoNavbarLayout = () => (
   </div>
 );
 
-export default function App() {
+// Component to handle FlashVideo based on route changes
+const FlashVideoHandler = () => {
+  const location = useLocation();
+  const [shouldPlayFlash, setShouldPlayFlash] = useState(false);
+  const [isVideoVisible, setIsVideoVisible] = useState(false);
 
-  const [showFlash, setShowFlash] = useState(true);
-
-  // Optional: Check if flash has been shown in this session
   useEffect(() => {
-    const hasSeenFlash = sessionStorage.getItem('hasSeenFlash');
-    if (hasSeenFlash) {
-      setShowFlash(false);
+    // Check if we're on the home page ('/')
+    if (location.pathname === '/') {
+      setShouldPlayFlash(true);
+      setIsVideoVisible(true);
+    } else {
+      setShouldPlayFlash(false);
+      setIsVideoVisible(false);
     }
-  }, []);
+  }, [location.pathname]);
 
   const handleFlashComplete = () => {
-    setShowFlash(false);
-    sessionStorage.setItem('hasSeenFlash', 'true');
+    setIsVideoVisible(false);
+    setShouldPlayFlash(false);
   };
+
+  // Don't render if not on home page or video shouldn't play
+  if (!isVideoVisible || !shouldPlayFlash) return null;
+
+  return <FlashVideo onComplete={handleFlashComplete} shouldPlay={shouldPlayFlash} />;
+};
+
+export default function App() {
+
+  
 
 
   return (
@@ -109,7 +124,7 @@ export default function App() {
       <Router>
                 <ScrollToTop /> {/* ADD THIS LINE - MUST be inside Router */}
 
-                 {showFlash && <FlashVideo onComplete={handleFlashComplete} />}
+                 <FlashVideoHandler />
 
         <Routes>
           {/* Routes WITH Navbar */}

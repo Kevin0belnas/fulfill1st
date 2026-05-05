@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 
-const FlashVideo = ({ onComplete, fileId, nextDelay = 5000 }) => {
-  const [isVisible, setIsVisible] = useState(true);
+const FlashVideo = ({ onComplete, fileId, nextDelay = 5000, shouldPlay = true }) => {
+  const [isVisible, setIsVisible] = useState(shouldPlay);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -21,6 +21,25 @@ const FlashVideo = ({ onComplete, fileId, nextDelay = 5000 }) => {
   const videoRef = useRef(null);
 
   const videoUrl = "https://res.cloudinary.com/dlnjwoids/video/upload/flash_dx1tnt.mp4";
+
+  // Reset component when shouldPlay changes
+  useEffect(() => {
+    if (shouldPlay) {
+      setIsVisible(true);
+      setHasStarted(false);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setShowShootingStars(true);
+      setIsEntering(true);
+      // Reset video if it exists
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.pause();
+      }
+    } else {
+      setIsVisible(false);
+    }
+  }, [shouldPlay]);
 
   // Calculate responsive dimensions
   const getResponsiveDimensions = () => {
@@ -73,19 +92,23 @@ const FlashVideo = ({ onComplete, fileId, nextDelay = 5000 }) => {
 
   // Shooting stars
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowShootingStars(false);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
+    if (shouldPlay) {
+      const timer = setTimeout(() => {
+        setShowShootingStars(false);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [shouldPlay]);
 
   // Entry animation (default 3s)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsEntering(false);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
+    if (shouldPlay) {
+      const timer = setTimeout(() => {
+        setIsEntering(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [shouldPlay]);
 
   // Fullscreen
   useEffect(() => {
