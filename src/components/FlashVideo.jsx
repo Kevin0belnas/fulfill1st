@@ -1,25 +1,28 @@
 import { useState, useRef, useEffect } from 'react';
 
-const FlashVideo = ({ onComplete }) => {
+const FlashVideo = ({ onComplete, fileId }) => {
   const [isVisible, setIsVisible] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showControls, setShowControls] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [progress, setProgress] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const containerRef = useRef(null);
-  const progressBarRef = useRef(null);
   const videoContainerRef = useRef(null);
+  const iframeRef = useRef(null);
+
+  // Default file ID - replace with your flash.mp4 Google Drive file ID
+  const defaultFileId = "13wYAZe0Yr_m7m89CyiZmPBKm2tJY-95v";
+  const videoFileId = fileId || defaultFileId;
+  const videoUrl = `https://drive.google.com/file/d/${videoFileId}/preview`;
 
   // Set initial position (center of screen)
   useEffect(() => {
     const windowWidth = window.innerWidth;
     const windowHeight = window.innerHeight;
-    const containerWidth = 800; // Increased from 500px to 800px
-    const containerHeight = 560; // Increased from 350px to 560px
+    const containerWidth = 800;
+    const containerHeight = 560;
     
     setPosition({
       x: (windowWidth / 2) - (containerWidth / 2),
@@ -27,34 +30,21 @@ const FlashVideo = ({ onComplete }) => {
     });
   }, []);
 
+  // Handle messages from iframe (for play/pause detection)
   useEffect(() => {
-    if (videoRef.current) {
-      const playPromise = videoRef.current.play();
-      
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.log("Autoplay prevented:", error);
-          if (videoRef.current) {
-            videoRef.current.muted = true;
-            videoRef.current.play();
-          }
-        });
+    const handleMessage = (event) => {
+      // Check if message is from our iframe
+      if (event.source === iframeRef.current?.contentWindow) {
+        if (event.data === 'play') {
+          setIsPlaying(true);
+        } else if (event.data === 'pause') {
+          setIsPlaying(false);
+        }
       }
-    }
-  }, []);
-
-  // Update progress bar
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const updateProgress = () => {
-      const percent = (video.currentTime / video.duration) * 100;
-      setProgress(percent);
     };
 
-    video.addEventListener('timeupdate', updateProgress);
-    return () => video.removeEventListener('timeupdate', updateProgress);
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   // Handle fullscreen change
@@ -68,7 +58,7 @@ const FlashVideo = ({ onComplete }) => {
   }, []);
 
   const handleMouseDown = (e) => {
-    if (isFullscreen) return; // Disable dragging in fullscreen
+    if (isFullscreen) return;
     setIsDragging(true);
     setDragStart({
       x: e.clientX - position.x,
@@ -93,44 +83,6 @@ const FlashVideo = ({ onComplete }) => {
 
   const handleMouseUp = () => {
     setIsDragging(false);
-  };
-
-  const handleTogglePlay = () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
-    }
-  };
-
-  const handleProgressClick = (e) => {
-    const progressBar = progressBarRef.current;
-    if (progressBar && videoRef.current) {
-      const rect = progressBar.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const width = rect.width;
-      const clickPercent = (x / width) * 100;
-      const seekTime = (clickPercent / 100) * videoRef.current.duration;
-      videoRef.current.currentTime = seekTime;
-      setProgress(clickPercent);
-    }
-  };
-
-  const handleVideoEnd = () => {
-    if (!isFullscreen) {
-      setIsVisible(false);
-      if (onComplete) onComplete();
-    }
-  };
-
-  const handleSkip = () => {
-    if (!isFullscreen) {
-      setIsVisible(false);
-      if (onComplete) onComplete();
-    }
   };
 
   const handleFullscreen = async () => {
@@ -160,6 +112,24 @@ const FlashVideo = ({ onComplete }) => {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging, dragStart]);
+
+  const handleVideoEnd = () => {
+    // Google Drive iframe doesn't easily expose ended event
+    // You might need to estimate based on duration or use a timer
+    setTimeout(() => {
+      if (!isFullscreen) {
+        setIsVisible(false);
+        if (onComplete) onComplete();
+      }
+    }, 1000); // Adjust based on your video length
+  };
+
+  const handleSkip = () => {
+    if (!isFullscreen) {
+      setIsVisible(false);
+      if (onComplete) onComplete();
+    }
+  };
 
   if (!isVisible) return null;
 
@@ -206,7 +176,7 @@ const FlashVideo = ({ onComplete }) => {
         
         {/* Fullscreen Header */}
         {isFullscreen && (
-          <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-4 z-10 opacity-0 hover:opacity-100 transition-opacity duration-300">
+          <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-4 z-10 opacity-0 hover:opacity-100 transition-opacity duration-300 pointer-events-none">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></div>
@@ -214,7 +184,7 @@ const FlashVideo = ({ onComplete }) => {
               </div>
               <button 
                 onClick={handleSkip}
-                className="text-white/80 hover:text-white transition-colors"
+                className="text-white/80 hover:text-white transition-colors pointer-events-auto"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -224,41 +194,26 @@ const FlashVideo = ({ onComplete }) => {
           </div>
         )}
         
-        {/* Video Container */}
-        <div className="relative bg-black">
-          <video 
-            ref={videoRef}
-            autoPlay 
-            muted
-            playsInline
-            onEnded={handleVideoEnd}
-            className="w-full aspect-video object-contain"
-            onClick={handleTogglePlay}
-          >
-            <source src="/images/flash.mp4" type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
+        {/* Video Container with Google Drive Embed */}
+        <div className="relative bg-black" style={{ height: '560px' }}>
+          <iframe
+            ref={iframeRef}
+            src={videoUrl}
+            className="w-full h-full"
+            allow="autoplay; fullscreen"
+            title="Flash Video"
+            frameBorder="0"
+            onLoad={() => {
+              // Optional: Send message to iframe to autoplay
+              console.log("Video iframe loaded");
+            }}
+          />
           
-          {/* Video Controls Overlay */}
+          {/* Custom Controls Overlay (optional - Google Drive has its own controls) */}
           <div className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${
             showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}>
             <div className="absolute inset-0 flex items-center justify-center gap-4">
-              <button
-                onClick={handleTogglePlay}
-                className="bg-white/20 hover:bg-white/30 rounded-full p-4 backdrop-blur-sm transition-all transform hover:scale-110"
-              >
-                {isPlaying ? (
-                  <svg className="w-10 h-10 text-white" fill="white" viewBox="0 0 24 24">
-                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-10 h-10 text-white" fill="white" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                )}
-              </button>
-              
               <button
                 onClick={handleFullscreen}
                 className="bg-white/20 hover:bg-white/30 rounded-full p-4 backdrop-blur-sm transition-all transform hover:scale-110"
@@ -276,38 +231,6 @@ const FlashVideo = ({ onComplete }) => {
             </div>
           </div>
         </div>
-        
-        {/* Progress Bar - Hidden in fullscreen */}
-        {!isFullscreen && (
-          <div 
-            ref={progressBarRef}
-            className="h-1.5 bg-gray-700 cursor-pointer relative"
-            onClick={handleProgressClick}
-          >
-            <div 
-              className="h-full bg-green-500 relative transition-all duration-100"
-              style={{ width: `${progress}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-green-500 rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity"></div>
-            </div>
-          </div>
-        )}
-
-        {/* Fullscreen Progress Bar */}
-        {isFullscreen && (
-          <div 
-            ref={progressBarRef}
-            className="absolute bottom-0 left-0 right-0 h-2 bg-gray-700/50 cursor-pointer hover:h-3 transition-all duration-200"
-            onClick={handleProgressClick}
-          >
-            <div 
-              className="h-full bg-green-500 relative transition-all duration-100"
-              style={{ width: `${progress}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-green-500 rounded-full opacity-0 hover:opacity-100 transition-opacity"></div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
