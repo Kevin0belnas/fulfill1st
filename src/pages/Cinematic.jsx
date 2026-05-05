@@ -80,6 +80,36 @@ const Cinematic = () => {
       category: 'Short Film',
       duration: '1:00',
       uploadDate: '2025',
+    },
+    {
+      id: 7,
+      title: 'AVA',
+      description: 'In this steamy romance novel set just as WWI is ending, Ava, a beautiful young woman, and Irish immigrant, initially explores her irresistible and alluring power over men with Alistar, a handsome sailor.',
+      author: 'Janet Perroni',
+      fileId: '1EFam1qgGOu8rnCD4ZCMFhPA6QOiW8y20', // Your Kakaki file ID
+      category: 'Trailer',
+      duration: '1:20',
+      uploadDate: '2026',
+    },
+    {
+      id: 8,
+      title: 'AVA Again',
+      description: 'Ava Daly Callott, the beautiful daughter of an Irish immigrant, is now a curvy woman in her mid-thirties who has survived several life challenges that include two pregnancies with different men: the first was with a brief encounter with a sailor, named Alistar and then an affair with a married man, Devon.',
+      author: 'Janet Perroni',
+      fileId: '1SR1fuoNrg1Q7BGqLvcZKgGDsF2xOMpx6', // Your Kakaki file ID
+      category: 'Trailer',
+      duration: '1:42',
+      uploadDate: '2026',
+    },
+    {
+      id: 9,
+      title: 'AVA Connection',
+      description: 'Avas Connection: A Tumultuous Heart is the gripping third installment in the award-winning Ava Romance Drama Series. Set against the backdrop of World War II, this historical novel weaves steamy love, heart-wrenching grief, and a powerful tale of commitment, redemption, and the enduring strength of truth.',
+      author: 'Janet Perroni',
+      fileId: '1RFog4WhhthTmKHTb-UezlSTBj6qDMh96', // Your Kakaki file ID
+      category: 'Trailer',
+      duration: '1:48',
+      uploadDate: '2026',
     }
   ];
 
