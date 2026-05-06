@@ -916,7 +916,7 @@ const ManageAuthors = () => {
   );
 };
 
-// Reusable Author Modal Component
+// Reusable Author Modal Component with Searchable Bookstore Dropdown
 const AuthorModal = ({ 
   isOpen, 
   onClose, 
@@ -933,6 +933,43 @@ const AuthorModal = ({
   bookstores,
   avatarInputRef
 }) => {
+  const [bookstoreSearchTerm, setBookstoreSearchTerm] = useState('');
+  const [isBookstoreDropdownOpen, setIsBookstoreDropdownOpen] = useState(false);
+  const bookstoreDropdownRef = useRef(null);
+
+  // Filter bookstores based on search term
+  const filteredBookstores = bookstores.filter(bookstore =>
+    bookstore.name.toLowerCase().includes(bookstoreSearchTerm.toLowerCase()) ||
+    bookstore.location?.toLowerCase().includes(bookstoreSearchTerm.toLowerCase())
+  );
+
+  // Get selected bookstore details
+  const selectedBookstore = bookstores.find(b => b.id === formData.bookstore_id);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (bookstoreDropdownRef.current && !bookstoreDropdownRef.current.contains(event.target)) {
+        setIsBookstoreDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Reset search term when dropdown closes
+  useEffect(() => {
+    if (!isBookstoreDropdownOpen) {
+      setBookstoreSearchTerm('');
+    }
+  }, [isBookstoreDropdownOpen]);
+
+  const handleBookstoreSelect = (bookstoreId) => {
+    onChange({ target: { name: 'bookstore_id', value: bookstoreId } });
+    setIsBookstoreDropdownOpen(false);
+    setBookstoreSearchTerm('');
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -947,7 +984,7 @@ const AuthorModal = ({
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className={`${theme.bg.modal} rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border ${theme.border.light}`}
+        className={`${theme.bg.modal} mt-15 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border ${theme.border.light}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6">
@@ -1032,25 +1069,104 @@ const AuthorModal = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Bookstore Selection */}
-              <div>
+              {/* Bookstore Selection - Searchable Dropdown */}
+              <div className="relative" ref={bookstoreDropdownRef}>
                 <label className="block text-sm font-medium text-emerald-700 mb-2">
                   Select Bookstore *
                 </label>
-                <select
-                  name="bookstore_id"
-                  value={formData.bookstore_id}
-                  onChange={onChange}
-                  required
-                  className="w-full px-4 py-3 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-emerald-900"
+                <div 
+                  className="relative cursor-pointer"
+                  onClick={() => setIsBookstoreDropdownOpen(!isBookstoreDropdownOpen)}
                 >
-                  <option value="">-- Select a Bookstore --</option>
-                  {bookstores.map(bookstore => (
-                    <option key={bookstore.id} value={bookstore.id}>
-                      {bookstore.name} - {bookstore.location}
-                    </option>
-                  ))}
-                </select>
+                  <div className="w-full px-4 py-3 bg-white border border-emerald-200 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-emerald-500 text-emerald-900 flex items-center justify-between">
+                    <span className={selectedBookstore ? 'text-emerald-900' : 'text-gray-400'}>
+                      {selectedBookstore 
+                        ? `${selectedBookstore.name} - ${selectedBookstore.location || 'No location'}`
+                        : '-- Select a Bookstore --'}
+                    </span>
+                    <svg 
+                      className={`w-5 h-5 text-emerald-500 transition-transform ${isBookstoreDropdownOpen ? 'rotate-180' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+                
+                {isBookstoreDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute z-50 w-full mt-1 bg-white border border-emerald-200 rounded-xl shadow-lg max-h-80 overflow-hidden"
+                  >
+                    <div className="p-2 border-b border-emerald-100">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search bookstores..."
+                          value={bookstoreSearchTerm}
+                          onChange={(e) => setBookstoreSearchTerm(e.target.value)}
+                          className="w-full px-4 py-2 pl-10 bg-emerald-50 border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-emerald-900 text-sm"
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <svg 
+                          className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-emerald-400"
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        {bookstoreSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBookstoreSearchTerm('');
+                            }}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-emerald-400 hover:text-emerald-600"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="overflow-y-auto max-h-64">
+                      {filteredBookstores.length > 0 ? (
+                        filteredBookstores.map((bookstore) => (
+                          <motion.div
+                            key={bookstore.id}
+                            whileHover={{ backgroundColor: '#f0fdf4' }}
+                            onClick={() => handleBookstoreSelect(bookstore.id)}
+                            className={`px-4 py-3 cursor-pointer transition-colors ${
+                              formData.bookstore_id === bookstore.id
+                                ? 'bg-emerald-50 border-l-4 border-emerald-500'
+                                : 'hover:bg-emerald-50'
+                            }`}
+                          >
+                            <div className="font-medium text-emerald-900">{bookstore.name}</div>
+                            {bookstore.location && (
+                              <div className="text-sm text-emerald-600 mt-0.5">{bookstore.location}</div>
+                            )}
+                          </motion.div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-8 text-center text-emerald-500">
+                          <svg className="w-12 h-12 mx-auto mb-2 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                          <p>No bookstores found</p>
+                          <p className="text-xs mt-1">Try a different search term</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
               </div>
 
               {/* Author Name */}
