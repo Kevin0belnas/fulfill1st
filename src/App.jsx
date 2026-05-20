@@ -44,6 +44,9 @@ import AuthorsBooksManagement from './pages/AuthorsBooksManagement';
 import ManageTradPub from './pages/ManageTradPub';
 import TradePub from './pages/TradePub';
 
+import ResetPassword from './pages/ResetPassword';
+import ForgotPassword from './pages/ForgotPassword';
+
 // Global style to hide scrollbar but keep scrolling
 const GlobalStyle = createGlobalStyle`
   html {
@@ -176,6 +179,10 @@ export default function App() {
             <Route path="/reset" element={<Reset />} />
             <Route path="/create-account" element={<CreateAccount />} />
             <Route path="/company/login" element={<CompanyLogin />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
+
+
           </Route>
         </Routes>
       </Router>
